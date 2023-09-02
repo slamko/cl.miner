@@ -1,9 +1,10 @@
 EXE = miner
 
 SRC =
+SRC += ocl.c
 SRC += main.c
 
-LIBS = -lcurl -ljansson
+LIBS = -lcurl -ljansson -lOpenCL
 
 OBJS = $(patsubst %.c,%.o,$(SRC))
 BUILD_OBJS = $(patsubst %.c,build/%.o,$(SRC))

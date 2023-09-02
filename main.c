@@ -3,18 +3,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <jansson.h>
-
-#define BITCOIND_URL "http://127.0.0.1:8332"
-#define HASH_LEN 256
-
-#define R(...) " "#__VA_ARGS__" "
+#include "miner.h"
+#include "ocl.h"
 
 struct best_block_hash {
-    char hash[HASH_LEN];
+    char hash[STR_HASH_LEN];
+};
+
+struct block_header {
+    int32_t version;
+    char prev_hash[32];
+    char merkle_root_hash[32];
+    int32_t time;
+    int32_t target;
+    int32_t nonce;
 };
 
 size_t write_callback(char *ptr, size_t size, size_t nmemb, void *dest) {
-    printf("Received: %s\n", ptr);
     char **dest_ptr = dest;
     *dest_ptr = malloc(size * nmemb + 1);
     strcpy(*dest_ptr, ptr);
@@ -41,7 +46,9 @@ CURLcode json_rpc(CURL *curl, const char *post_data, char **dest_str) {
     curl_easy_setopt(curl, CURLOPT_USERPWD, "slamko:VenezuellaMiner00");
     curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_TRY);
     
-    return curl_easy_perform(curl);
+    CURLcode ret = curl_easy_perform(curl);
+    curl_slist_free_all(headers);
+    return ret;
 }
 
 const char *post_data = R(
@@ -54,7 +61,7 @@ const char *post_data = R(
 
 CURLcode get_best_block_hash(CURL *curl, struct best_block_hash *res) {
     CURLcode ret = 1;
-    char *json_str;
+    char *json_str = NULL;
     json_error_t err = {0};
    
     ret = json_rpc(curl, post_data, &json_str);
@@ -62,34 +69,62 @@ CURLcode get_best_block_hash(CURL *curl, struct best_block_hash *res) {
     json_t *best_block_json = json_loads(json_str, JSON_ALLOW_NUL | JSON_DECODE_ANY, &err);
 
     if (!best_block_json) {
-        ret = 1;
-        goto cleanup;
+        err("RPC Method failed\n");
+        ret_code(1);
     }
 
     char *result;
     if (json_unpack(best_block_json, "{s:s}", "result", &result)) {
-        ret = 1;
-        goto cleanup;
+        err("Unknown bitcoind response format\n");
+        ret_code(1);
+    }
+
+    if (!result) {
+        err("Json decoding failed\n");
+        ret_code(1);
+    }
+
+    size_t res_len = strlen(result);
+
+    if (res_len != sizeof(res->hash)) {
+        error("Unmatched hash length %zu\n", res_len);
+        ret_code(1);
     }
 
     strcpy(res->hash, result);
     
   cleanup:
-    free(json_str);
+    if (json_str)
+        free(json_str);
+    if (best_block_json) {
+        json_decref(best_block_json);
+    }
     return ret;
 }
 
 int main(void) {
     CURL *curl = curl_easy_init();
-    CURLcode ret = {0};
 
     if (!curl) {
         return 1;
     }
 
+    int ret = ocl_init();
+    if (ret) {
+        error("OpenCL initialization failed: %d\n", ret);
+    }
+    
     struct best_block_hash best_hash = {0};
     
     ret = get_best_block_hash(curl, &best_hash);
+
+    if (ret) {
+        printf("Error occured: %d\n", ret);
+        exit(ret);
+    }
    
     printf("Curl stat: %d \n Best hash: %s\n", ret, best_hash.hash);
+
+    curl_easy_cleanup(curl);
+    ocl_free();
 }

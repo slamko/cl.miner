@@ -3,7 +3,7 @@ EXE = miner
 SRC =
 SRC += main.c
 
-LIBS = -lcurl
+LIBS = -lcurl -ljansson
 
 OBJS = $(patsubst %.c,%.o,$(SRC))
 BUILD_OBJS = $(patsubst %.c,build/%.o,$(SRC))

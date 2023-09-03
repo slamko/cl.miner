@@ -129,9 +129,16 @@ int main(void) {
         exit(ret);
     }
    
-    const char inp[] = "Somewhat rather big string definitely bigger than 64 bytes so that you should split it into chunks";
+    const char inp[] = "hello just testing this shit not something particullary interesting really";
     uint8_t out[STR_HASH_LEN] = {0};
     ret = sha256((uint8_t *)inp, out, sizeof(inp) - 1);
+
+    if (ret) {
+        error("Kernel failed: %d\n", ret);
+    }
+
+    uint8_t out_double[STR_HASH_LEN] = {0};
+    ret = sha256(out, out_double, sizeof(out));
 
     if (ret) {
         error("Kernel failed: %d\n", ret);

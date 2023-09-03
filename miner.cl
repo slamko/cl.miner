@@ -111,10 +111,8 @@ __kernel void sha256(__global __read_only const char *input,
     h = hi[7];
 
     for (size_t i = 0; i < 8; i++) {
-        printf("Hi: %x\n", hi[i]);
+        // printf("Hi: %x\n", hi[i]);
     }
-
-
 
     }
 

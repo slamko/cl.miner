@@ -182,7 +182,7 @@ int ocl_init(void) {
 void print_buf(const char *name, const uint8_t *buf, size_t len) {
     printf("Buf: %s\n", name);
     for (size_t i = 0; i < len; i++) {
-        printf("%x", buf[i]);
+        printf("%02x", buf[i]);
     }
     putc('\n', stdout);
 }
@@ -192,7 +192,7 @@ int sha256(const uint8_t *data, uint8_t *out, size_t len) {
         return 1;
     }
 
-    size_t al_inp_size = align(len, 64);
+    size_t al_inp_size = align((len + 8), 64);
     uint8_t *input = calloc(al_inp_size, sizeof *input);
     memcpy(input, data, len);
     input[len] = 0x80;
@@ -201,6 +201,7 @@ int sha256(const uint8_t *data, uint8_t *out, size_t len) {
     memcpy((char *)(input + al_inp_size - sizeof(big_len)), &big_len, sizeof(big_len));
 
     print_buf("Input", input, al_inp_size);
+    printf("Inp: %zu\n", al_inp_size);
 
     cl_int ret = {0};
 
@@ -230,6 +231,7 @@ int sha256(const uint8_t *data, uint8_t *out, size_t len) {
 
   cleanup:
     free(input);
+    clReleaseKernel(kernel);
 
     return ret;
 }

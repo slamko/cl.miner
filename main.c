@@ -129,7 +129,7 @@ int main(void) {
         exit(ret);
     }
    
-    const char inp[] = "What about that!";
+    const char inp[] = "Somewhat rather big string definitely bigger than 64 bytes so that you should split it into chunks";
     uint8_t out[STR_HASH_LEN] = {0};
     ret = sha256((uint8_t *)inp, out, sizeof(inp) - 1);
 

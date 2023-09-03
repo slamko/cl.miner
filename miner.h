@@ -8,7 +8,7 @@
 #define R(...) " " #__VA_ARGS__ " "
 
 #define ARR_LEN(x) (sizeof(x) / sizeof(*(x)))
-#define align(x, al) (((x) / (al)) + ((x) % (al) ? (al) : 0))
+#define align(x, al) ((((x) / (al)) * (al)) + (((x) % (al)) ? (al) : 0))
 
 #define BLOCK_RAW_LEN 80
 

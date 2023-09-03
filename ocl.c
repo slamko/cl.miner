@@ -214,7 +214,8 @@ int sha256(const uint8_t *data, uint8_t *out, size_t len) {
     if (ret) ret_code(ret);
 
     ret |= clSetKernelArg(kernel, 0, sizeof(cl_mem), &inp_mem);
-    ret |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &out_mem);
+    ret |= clSetKernelArg(kernel, 1, sizeof(cl_ulong), &al_inp_size);
+    ret |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &out_mem);
     if (ret) ret_code(ret);
 
     const size_t glob_wg[] = { 1 };

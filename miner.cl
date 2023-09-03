@@ -49,6 +49,7 @@ void memcpyui(__global char *dest, uint *src, size_t len) {
 }
 
 __kernel void sha256(__global __read_only const char *input,
+                     unsigned long len,
                      __global __write_only char *output) {
 
     uint w[64];
@@ -60,13 +61,16 @@ __kernel void sha256(__global __read_only const char *input,
 
     uint a = hi[0], b = hi[1], c = hi[2], d = hi[3], e = hi[4], f = hi[5], g = hi[6], h = hi[7];
 
-    for (size_t i = 0; i < 16; i++) {
-        w[i] = (((uint)input[i * 4 + 0] & 0xFF) << 24) |
-               (((uint)input[i * 4 + 1] & 0xFF) << 16) |
-               (((uint)input[i * 4 + 2] & 0xFF) << 8) |
-               (((uint)input[i * 4 + 3] & 0xFF) );
+    size_t epochs = (len / 64) + (len % 64 ? 1 : 0);
 
-        // printf("W: %x : %x\n", w[i], ((uint)input[1]));
+    for (size_t epoch = 0; epoch < epochs; epoch++) {
+
+    for (size_t i = 0; i < 16; i++) {
+        w[i] = (((uint)input[(epoch * 64) + i * 4 + 0] & 0xFF) << 24) |
+               (((uint)input[(epoch * 64) + i * 4 + 1] & 0xFF) << 16) |
+               (((uint)input[(epoch * 64) + i * 4 + 2] & 0xFF) << 8) |
+               (((uint)input[(epoch * 64) + i * 4 + 3] & 0xFF) );
+
     }
 
     for (size_t t = 16; t < 64; t++) {
@@ -76,6 +80,7 @@ __kernel void sha256(__global __read_only const char *input,
     for (size_t t = 0; t < 64; t++) {
         uint t1 = h + SUM1(e) + Ch(e, f, g) + k[t] + w[t];
         uint t2 = SUM0(a) + Maj(a, b, c);
+        // printf("W: %x : %x\n", w[t], ((uint)input[1]));
 
         h = g;
         g = f;
@@ -96,8 +101,21 @@ __kernel void sha256(__global __read_only const char *input,
     hi[6] += g;
     hi[7] += h;
 
-    for (size_t i = 0; i < 64; i++) {
-        // printf("%x", input[i]);
+    a = hi[0];
+    b = hi[1];
+    c = hi[2];
+    d = hi[3];
+    e = hi[4];
+    f = hi[5];
+    g = hi[6];
+    h = hi[7];
+
+    for (size_t i = 0; i < 8; i++) {
+        printf("Hi: %x\n", hi[i]);
+    }
+
+
+
     }
 
     memcpyui(output, hi, 8);

@@ -118,10 +118,47 @@ int ocl_init(void) {
         return 1;
     }
 
-    queue = clCreateCommandQueueWithProperties(context, device, NULL, &ret);
+    cl_queue_properties props[] = { CL_QUEUE_PROFILING_ENABLE };
+    queue = clCreateCommandQueueWithProperties(context, device, props, &ret);
     if (ret) {
         error("Command queue creation failed: %s\n", getErrorString(ret));
         ret_code(1);
+    }
+
+    FILE *srcf = fopen("miner.cl", "r");
+    if (!srcf) {
+        err("No source file\n");
+        ret_code(2);
+    }
+
+    fseek(srcf, 0, SEEK_END);
+    size_t len = ftell(srcf);
+    fseek(srcf, 0, SEEK_SET);
+
+    if (!len) {
+        err("CL source is empty\n");
+        ret_code(2);
+    }
+
+    char *src_str = malloc(len + 1);
+    if (!src_str) {
+        err("Out of memory\n");
+        ret_code(2);
+    }
+    src_str[len] = '\0';
+
+    fread(src_str, sizeof(*src_str), len, srcf);
+
+    program = clCreateProgramWithSource(context, 1, (const char **)&src_str, &len, &ret);
+    if (ret) {
+        err("Program creation failed\n");
+        ret_code(1);
+    }
+
+    if (clBuildProgram(program, 1, &device, NULL, NULL, NULL)) {
+        char build_log[0x2000];
+        clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, sizeof(build_log), build_log, NULL);
+        puts(build_log);
     }
 
     return 0;
@@ -129,8 +166,23 @@ int ocl_init(void) {
   cleanup:
     if (context)
         clReleaseContext(context);
+
+    if (srcf)
+        fclose(srcf);
+
+    if (program)
+        clReleaseProgram(program);
+
+    if (queue)
+        clReleaseCommandQueue(queue);
    
     return ret;
+}
+
+void print_buf(const uint8_t *buf, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        printf("%x", buf[i]);
+    }
 }
 
 int sha256(const uint8_t *data, size_t len) {
@@ -142,14 +194,12 @@ int sha256(const uint8_t *data, size_t len) {
     memcpy(input, data, len);
     input[len] = 0x8;
    
-    uint32_t big_len = ntohl((uint32_t)len);
+    uint32_t big_len = htonl((uint32_t)len);
     memcpy((char *)(input + sizeof(input) - sizeof(big_len)), &big_len, sizeof(big_len));
 
-    for (size_t i = 0; i < sizeof(input); i++) {
-        printf("%x", input[i]);
-    }
-
+    print_buf(input, sizeof(input));
     printf("\nLen: %zu\n", len);
+    /* printf("Rotr: %x\n", rotr7(htonl(0xabc4))); */
 
     return 0;
 }

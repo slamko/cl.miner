@@ -1,4 +1,5 @@
 EXE = miner
+CC = gcc
 
 SRC =
 SRC += ocl.c
@@ -9,14 +10,16 @@ LIBS = -lcurl -ljansson -lOpenCL
 OBJS = $(patsubst %.c,%.o,$(SRC))
 BUILD_OBJS = $(patsubst %.c,build/%.o,$(SRC))
 
+FLAGS = -D CL_TARGET_OPENCL_VERSION=300
+
 all: $(EXE)
 
 $(EXE): $(BUILD_OBJS)
-	gcc $^ $(LIBS) -o $@
+	$(CC) $^ $(FLAGS) $(LIBS) -o $@
 
 $(BUILD_OBJS): $(SRC)
 	mkdir -p build
-	gcc -c $^
+	$(CC) -c $(FLAGS) $^
 	mv $(OBJS) build
 
 run: $(EXE)

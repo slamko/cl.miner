@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <jansson.h>
+#include <stdint.h>
 #include "miner.h"
 #include "ocl.h"
 
@@ -17,7 +18,12 @@ struct block_header {
     int32_t time;
     int32_t target;
     int32_t nonce;
-};
+} __attribute__ ((packed));
+
+
+void block_pack(struct block_header *block, uint8_t raw[BLOCK_RAW_LEN]) {
+    memcpy(raw, block, BLOCK_RAW_LEN);
+}
 
 size_t write_callback(char *ptr, size_t size, size_t nmemb, void *dest) {
     char **dest_ptr = dest;
@@ -116,7 +122,7 @@ int main(void) {
     
     struct best_block_hash best_hash = {0};
     
-    ret = get_best_block_hash(curl, &best_hash);
+    /* ret = get_best_block_hash(curl, &best_hash); */
 
     if (ret) {
         printf("Error occured: %d\n", ret);
@@ -124,6 +130,17 @@ int main(void) {
     }
    
     printf("Curl stat: %d \n Best hash: %s\n", ret, best_hash.hash);
+
+    struct block_header header = {0};
+    memset(header.merkle_root_hash, 0x12, sizeof(header.merkle_root_hash));
+    memset(header.prev_hash, 0x56, sizeof(header.merkle_root_hash));
+
+    header.nonce = 0x73435ab;
+    header.version = 0x1;
+
+    uint8_t raw[80];
+    block_pack(&header, raw);
+    sha256(raw, sizeof raw);
 
     curl_easy_cleanup(curl);
     ocl_free();

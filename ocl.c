@@ -1,6 +1,12 @@
 #include "ocl.h"
 #include <CL/cl.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+#include <endian.h>
+#include <arpa/inet.h>
+#include <math.h>
 #include "miner.h"
 
 cl_device_id device;
@@ -125,6 +131,27 @@ int ocl_init(void) {
         clReleaseContext(context);
    
     return ret;
+}
+
+int sha256(const uint8_t *data, size_t len) {
+    if (!len) {
+        return 1;
+    }
+
+    uint8_t input[128] = {0};
+    memcpy(input, data, len);
+    input[len] = 0x8;
+   
+    uint32_t big_len = ntohl((uint32_t)len);
+    memcpy((char *)(input + sizeof(input) - sizeof(big_len)), &big_len, sizeof(big_len));
+
+    for (size_t i = 0; i < sizeof(input); i++) {
+        printf("%x", input[i]);
+    }
+
+    printf("\nLen: %zu\n", len);
+
+    return 0;
 }
 
 int ocl_free(void) {

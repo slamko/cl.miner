@@ -10,7 +10,7 @@ LIBS = -lcurl -ljansson -lOpenCL
 OBJS = $(patsubst %.c,%.o,$(SRC))
 BUILD_OBJS = $(patsubst %.c,build/%.o,$(SRC))
 
-FLAGS = -g -D CL_TARGET_OPENCL_VERSION=300
+FLAGS = -g -Wall -Wextra -D CL_TARGET_OPENCL_VERSION=300
 
 all: $(EXE)
 

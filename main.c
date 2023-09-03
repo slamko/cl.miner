@@ -22,7 +22,7 @@ struct block_header {
 
 
 void block_pack(struct block_header *block, uint8_t raw[BLOCK_RAW_LEN]) {
-    memcpy(raw, block, BLOCK_RAW_LEN);
+    memcpy(raw, block, 80);
 }
 
 size_t write_callback(char *ptr, size_t size, size_t nmemb, void *dest) {
@@ -108,27 +108,9 @@ CURLcode get_best_block_hash(CURL *curl, struct best_block_hash *res) {
     return ret;
 }
 
-int main(void) {
-    CURL *curl = curl_easy_init();
-
-    if (!curl) {
-        return 1;
-    }
-
-    int ret = ocl_init();
-    if (ret) {
-        error("OpenCL initialization failed: %d\n", ret);
-    }
+void test() {
+    int ret;
     
-    struct best_block_hash best_hash = {0};
-    
-    /* ret = get_best_block_hash(curl, &best_hash); */
-
-    if (ret) {
-        printf("Error occured: %d\n", ret);
-        exit(ret);
-    }
-   
     const char inp[] = "hello just testing this shit not something particullary interesting really";
     uint8_t out[STR_HASH_LEN] = {0};
     ret = sha256((uint8_t *)inp, out, sizeof(inp) - 1);
@@ -143,7 +125,40 @@ int main(void) {
     if (ret) {
         error("Kernel failed: %d\n", ret);
     }
+}
 
+int main(void) {
+    CURL *curl = curl_easy_init();
+
+    if (!curl) {
+        return 1;
+    }
+
+    int ret = ocl_init();
+    if (ret) {
+        error("OpenCL initialization failed: %d\n", ret);
+    }
+    
+    struct block_header block;
+
+    block.nonce = 0x1;
+    block.version = 0x11;
+    block.target = 0xabc1256;
+
+    memset(block.merkle_root_hash, 0x4f, sizeof block.merkle_root_hash);
+    memset(block.prev_hash, 0xb1, sizeof block.merkle_root_hash);
+
+    uint8_t raw[80];
+    block_pack(&block, raw);
+
+    uint8_t out[STR_HASH_LEN] = {0};
+    ret = sha256(raw, out, sizeof raw);
+
+    if (ret) {
+        printf("Error occured: %d\n", ret);
+        exit(ret);
+    }
+   
     curl_easy_cleanup(curl);
     ocl_free();
 }

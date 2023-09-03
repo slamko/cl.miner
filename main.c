@@ -140,7 +140,11 @@ int main(void) {
 
     uint8_t raw[80];
     block_pack(&header, raw);
-    sha256(raw, sizeof raw);
+    ret = sha256((uint8_t *)"Hello", sizeof("Hello"));
+
+    if (ret) {
+        error("Kernel failed: %d\n", ret);
+    }
 
     curl_easy_cleanup(curl);
     ocl_free();

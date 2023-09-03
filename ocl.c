@@ -190,7 +190,7 @@ int sha256(const uint8_t *data, size_t len) {
         return 1;
     }
 
-    uint8_t input[128] = {0};
+    uint8_t input[64] = {0};
     memcpy(input, data, len);
     input[len] = 0x8;
    
@@ -200,6 +200,31 @@ int sha256(const uint8_t *data, size_t len) {
     print_buf(input, sizeof(input));
     printf("\nLen: %zu\n", len);
     /* printf("Rotr: %x\n", rotr7(htonl(0xabc4))); */
+    cl_int ret = {0};
+
+    uint8_t out[32] = {0};
+    cl_mem inp_mem = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(input), input, &ret);
+    cl_mem out_mem = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(out), NULL, &ret);
+    if (ret) return ret;
+
+    cl_kernel kernel = clCreateKernel(program, "sha256", &ret);
+    if (ret) return ret;
+    ret |= clSetKernelArg(kernel, 0, sizeof(cl_mem), &inp_mem);
+    ret |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &out_mem);
+    if (ret) return ret;
+
+    const size_t glob_wg[] = { 1 };
+    const size_t loc_wg[] = { 1 };
+    ret = clEnqueueNDRangeKernel(queue, kernel, 1, NULL, glob_wg, loc_wg, 0, NULL, NULL);
+    if (ret) return ret;
+
+    ret = clEnqueueReadBuffer(queue, out_mem, CL_TRUE, 0u, sizeof(out), out, 0, NULL, NULL);
+    if (ret) return ret;
+
+    printf("Sha: \n");
+    print_buf(out, 32);
+    printf("\nInput: \n");
+    print_buf(input, 64);
 
     return 0;
 }

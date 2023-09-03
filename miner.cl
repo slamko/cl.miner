@@ -39,16 +39,17 @@ rotr(19)
 #define Ch(e, f, g) (g ^ (e & (f ^ g)))
 #define Maj(a, b, c) ((b & c) | a)
 
-void mempcyui(__global char *dest, uint *src, size_t len) {
+void memcpyui(__global char *dest, uint *src, size_t len) {
+
     for (size_t i = 0; i < len; i++) {
         for (int j = 0; j < 4; j++) {
-            dest[(i * 4) + j] |= (src[i] >> (16 * j)) & 0xFF;
+            dest[(i * 4) + j] = (src[i] >> (8 * j)) & 0xFF;
         }
     }
 }
 
 __kernel void sha256(__global __read_only const char *input,
-                     __global __read_write char *output) {
+                     __global __write_only char *output) {
 
     uint w[64];
 
@@ -61,17 +62,10 @@ __kernel void sha256(__global __read_only const char *input,
 
 
     for (size_t i = 0; i < 16; i++) {
+        w[i] = 0;
         for (int j = 0; j < 4; j++) {
-            w[i] |= input[(i * 4) + j] << (16 * j);
+            w[i] |= input[(i * 4) + j] << (8 * j);
         }
-
-    /*
-        w[i] |= input[i + 0] & 0x00000000;
-        w[i] |= input[i + 1] & 0x000000FF;
-        w[i] |= input[i + 2] & 0x0000FF00;
-        w[i] |= input[i + 3] & 0x00FF0000;
-    */
-
     }
 
     for (size_t t = 16; t < 64; t++) {
@@ -100,6 +94,10 @@ __kernel void sha256(__global __read_only const char *input,
     hi[5] = f + hi[5];
     hi[6] = g + hi[6];
     hi[7] = h + hi[7];
+
+    for (int i = 0;i < 8; i++) {
+        printf("%x  ", hi[i]); 
+    }
 
     memcpyui(output, hi, 8);
 }

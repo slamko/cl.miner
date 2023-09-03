@@ -129,18 +129,9 @@ int main(void) {
         exit(ret);
     }
    
-    printf("Curl stat: %d \n Best hash: %s\n", ret, best_hash.hash);
-
-    struct block_header header = {0};
-    memset(header.merkle_root_hash, 0x12, sizeof(header.merkle_root_hash));
-    memset(header.prev_hash, 0x56, sizeof(header.merkle_root_hash));
-
-    header.nonce = 0x73435ab;
-    header.version = 0x1;
-
-    uint8_t raw[80];
-    block_pack(&header, raw);
-    ret = sha256((uint8_t *)"Hello", sizeof("Hello"));
+    const char inp[] = "What about that!";
+    uint8_t out[STR_HASH_LEN] = {0};
+    ret = sha256((uint8_t *)inp, out, sizeof(inp) - 1);
 
     if (ret) {
         error("Kernel failed: %d\n", ret);

@@ -14,7 +14,7 @@ constant uint k[64] = {
 
 #define rotr(base) \
     static inline uint CAT(rotr, base)(uint val) {                            \
-        return (val >> (base)) | ((val & (0xFFFFFFFF >> (32 - (base)))) << (32 - (base))); \
+        return (val >> (base)) | (val << (32 - (base))); \
     }
 
 rotr(2)
@@ -36,14 +36,14 @@ rotr(19)
 #define SUM0(x) (rotr2(x) ^ rotr13(x) ^ rotr22(x))
 #define SUM1(x) (rotr6(x) ^ rotr11(x) ^ rotr25(x))
 
-#define Ch(e, f, g) (g ^ (e & (f ^ g)))
-#define Maj(a, b, c) ((b & c) | a)
+#define Ch(e, f, g) ((e & f) ^ ((~e) & g))
+#define Maj(a, b, c) ((a & b) | (c & (a | b)))
 
 void memcpyui(__global char *dest, uint *src, size_t len) {
 
     for (size_t i = 0; i < len; i++) {
         for (int j = 0; j < 4; j++) {
-            dest[(i * 4) + j] = (src[i] >> (8 * j)) & 0xFF;
+            dest[(i * 4) + (3 - j)] = (src[i] >> (8 * j)) & 0xFF;
         }
     }
 }
@@ -60,12 +60,13 @@ __kernel void sha256(__global __read_only const char *input,
 
     uint a = hi[0], b = hi[1], c = hi[2], d = hi[3], e = hi[4], f = hi[5], g = hi[6], h = hi[7];
 
-
     for (size_t i = 0; i < 16; i++) {
-        w[i] = 0;
-        for (int j = 0; j < 4; j++) {
-            w[i] |= input[(i * 4) + j] << (8 * j);
-        }
+        w[i] = (((uint)input[i * 4 + 0] & 0xFF) << 24) |
+               (((uint)input[i * 4 + 1] & 0xFF) << 16) |
+               (((uint)input[i * 4 + 2] & 0xFF) << 8) |
+               (((uint)input[i * 4 + 3] & 0xFF) );
+
+        // printf("W: %x : %x\n", w[i], ((uint)input[1]));
     }
 
     for (size_t t = 16; t < 64; t++) {
@@ -86,17 +87,17 @@ __kernel void sha256(__global __read_only const char *input,
         a = t1 + t2;
     }
 
-    hi[0] = a + hi[0];
-    hi[1] = b + hi[1];
-    hi[2] = c + hi[2];
-    hi[3] = d + hi[3];
-    hi[4] = e + hi[4];
-    hi[5] = f + hi[5];
-    hi[6] = g + hi[6];
-    hi[7] = h + hi[7];
+    hi[0] += a;
+    hi[1] += b;
+    hi[2] += c;
+    hi[3] += d;
+    hi[4] += e;
+    hi[5] += f;
+    hi[6] += g;
+    hi[7] += h;
 
-    for (int i = 0;i < 8; i++) {
-        printf("%x  ", hi[i]); 
+    for (size_t i = 0; i < 64; i++) {
+        // printf("%x", input[i]);
     }
 
     memcpyui(output, hi, 8);

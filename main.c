@@ -1,3 +1,4 @@
+#include "miner.h"
 #include <curl/curl.h>
 #include <string.h>
 #include <stdio.h>
@@ -5,25 +6,93 @@
 #include <jansson.h>
 #include <stdint.h>
 #include <arpa/inet.h>
-#include "miner.h"
 #include "ocl.h"
 
 struct best_block_hash {
     char hash[STR_HASH_LEN];
 };
 
-struct block_header {
-    int32_t version;
-    char prev_hash[32];
-    char merkle_root_hash[32];
-    int32_t time;
-    int32_t target;
-    int32_t nonce;
-} __attribute__ ((packed));
+struct transaction {
+    hash_t txid;
+    hash_t hash;
+};
 
+typedef struct transaction_list {
+    struct transaction *tlist;
+    size_t len;
+} transaction_list_t;
 
-void block_pack(struct block_header *block, uint8_t raw[BLOCK_RAW_LEN]) {
-    memcpy(raw, block, 80);
+void build_merkle_root(struct transaction *tlist, size_t len, hash_t *merkle_root) {
+    struct transaction *merkle_tree = malloc(len * sizeof *merkle_tree);
+    memcpy(merkle_tree, tlist, len * sizeof *merkle_tree);
+    
+    size_t mod = 2;
+    for (size_t i = 0; i < len; i += mod) {
+        uint8_t concat_hash[64];
+        memcpy(concat_hash, merkle_tree[i].txid.byte_hash, sizeof(merkle_tree[i].txid.byte_hash));
+        memcpy(concat_hash + sizeof (concat_hash) / 2, merkle_tree[i + 1].txid.byte_hash, sizeof(merkle_tree[i + 1].txid.byte_hash));
+
+        double_sha256(concat_hash, merkle_tree[i].txid.byte_hash, sizeof concat_hash);
+        
+        mod *= 2;
+    }
+
+    memcpy(merkle_root, &merkle_tree[0].txid, sizeof *merkle_root);
+    free(merkle_tree);
+}
+
+int build_transaction_list(json_t *t_arr, transaction_list_t *tlist) {
+    int ret = 0;
+    size_t t_len = json_array_size(t_arr);
+    tlist->tlist = calloc(t_len, sizeof *tlist->tlist);
+    tlist->len = t_len;
+
+    for (size_t i = 0; i < t_len; i++) {
+        json_t *transaction = json_array_get(t_arr, i);
+        struct transaction *cur_t = &tlist->tlist[i];
+
+        char *txid = NULL, *hash = NULL;
+        if ((ret = json_unpack(transaction, "{s:s, s:s}", "txid", &txid, "hash", &hash))) {
+            err("Invalid transaction in a list\n");
+            ret_code(ret);
+        }
+
+        if (!txid || !hash) {
+            err("No transaction hash\n");
+            ret_code(1);
+        }
+
+        if (strlen(txid) != 2 * STR_HASH_LEN || strlen(hash) != 2 * STR_HASH_LEN) {
+            err("Invalid transaction hash\n");
+            ret_code(1);
+        }
+
+        memcpy(&cur_t->txid.byte_hash, txid, sizeof cur_t->txid.byte_hash);
+        memcpy(&cur_t->hash.byte_hash, hash, sizeof cur_t->hash.byte_hash);
+
+  cleanup:
+        free(txid);
+        free(hash);
+
+        break;
+    }
+
+    if (ret) {
+        free(tlist);
+        err("Aborting transaction list creation\n");
+        return ret;
+    }
+
+    return ret;
+}
+
+void block_pack(const struct block_header *block, uint8_t raw[BLOCK_RAW_LEN]) {
+    memcpy(raw, &block->version, sizeof block->version);
+    memcpy(raw + 4, &block->prev_hash, sizeof block->prev_hash);
+    memcpy(raw + 36, &block->merkle_root_hash, sizeof block->merkle_root_hash);
+    memcpy(raw + 68, &block->target, sizeof block->target);
+    memcpy(raw + 72, &block->time, sizeof block->time);
+    memcpy(raw + 76, &block->nonce, sizeof block->nonce);
 }
 
 size_t write_callback(char *ptr, size_t size, size_t nmemb, void *dest) {
@@ -58,20 +127,95 @@ CURLcode json_rpc(CURL *curl, const char *post_data, char **dest_str) {
     return ret;
 }
 
-const char *post_data = R(
+const char *blocktemplate_post_data = R(
     {"jsonrpc": 2.0,
      "id": "cumainer",
-     "method": "getbestblockhash",
+     "method": "getblocktemplate",
      "params": []
     }
     );
+
+const char *bestblock_post_data = R(
+    {"jsonrpc": 2.0,
+     "id": "cumainer",
+     "method": "getbestblockhash",
+     "params": {"rules": ["segwit"]}
+    }
+    );
+
+CURLcode get_json(CURL *curl, const char *post, json_t **json) {
+    char *json_str = NULL;
+    CURLcode ret;
+    json_error_t err = {0};
+   
+    ret = json_rpc(curl, blocktemplate_post_data, &json_str);
+
+    *json = json_loads(json_str, JSON_ALLOW_NUL | JSON_DECODE_ANY, &err);
+
+    if (!json) {
+        err("RPC Method failed\n");
+        ret_code(1);
+    }
+
+  cleanup:
+    free(json_str);
+    return ret;
+}
+
+CURLcode get_block_template(CURL *curl, struct block_header *template) {
+    CURLcode ret = 1;
+    json_t *json;
+    char *nbits = NULL;
+    json_t *transactions;
+
+    if (get_json(curl, blocktemplate_post_data, &json)) {
+        err("Json rpc failed\n");
+        ret_code(1);
+    }
+    
+    if (json_unpack(json, "{s:s, s:i, s:i, s:i, s:o}",
+                    "previousblockhash", &template->prev_hash,
+                    "curtime", &template->time,
+                    "bits", &nbits,
+                    "version", &template->version,
+                    "transactions", &transactions)) {
+
+        err("Unknown bitcoind response format\n");
+        ret_code(1);
+    }
+
+    if (!transactions || !nbits) {
+        err("Json decoding failed\n");
+        ret_code(1);
+    }
+
+    memcpy(&template->target, nbits, sizeof template->target);
+
+    transaction_list_t tlist = {0};
+    hash_t merkle_root;
+    build_transaction_list(transactions, &tlist);
+    build_merkle_root(tlist.tlist, tlist.len, &merkle_root);
+
+    memcpy(template->merkle_root_hash, merkle_root.byte_hash, sizeof template->merkle_root_hash);
+
+  cleanup:
+    if (json) {
+        json_decref(json);
+    }
+
+    /* if (transactions) { */
+        /* json_decref(json); */
+    /* } */
+
+    return ret;
+}
 
 CURLcode get_best_block_hash(CURL *curl, struct best_block_hash *res) {
     CURLcode ret = 1;
     char *json_str = NULL;
     json_error_t err = {0};
    
-    ret = json_rpc(curl, post_data, &json_str);
+    ret = json_rpc(curl, bestblock_post_data, &json_str);
 
     json_t *best_block_json = json_loads(json_str, JSON_ALLOW_NUL | JSON_DECODE_ANY, &err);
 
@@ -127,11 +271,6 @@ void test() {
         error("Kernel failed: %d\n", ret);
     }
 }
-
-typedef union hash {
-    uint8_t byte_hash[32];
-    uint32_t uint_hash[8];
-} hash_t;
 
 void hash_print(const char *name, hash_t *hash) {
     printf("\n%s\n", name);

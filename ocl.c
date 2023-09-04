@@ -186,6 +186,54 @@ void print_buf(const char *name, const uint8_t *buf, size_t len) {
     }
     putc('\n', stdout);
 }
+/*
+int mine(const struct block_header *block, hash_t *target, hash_t *hash) {
+    if (!block || !target || !hash) {
+        return 1;
+    }
+
+    uint8_t block_input[128] = {0};
+
+    block_pack(block, block_input);
+    block_input[BLOCK_RAW_LEN] = 0x80;
+   
+    uint32_t big_len = htonl((uint32_t)BLOCK_RAW_LEN << 3);
+    memcpy(block_input + sizeof(block_input) - sizeof(big_len), &big_len, sizeof(big_len));
+
+    print_buf("Input", block_input, sizeof block_input);
+
+    cl_int ret = {0};
+
+    cl_mem inp_mem = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof block_input, block_input, &ret);
+    if (ret) ret_code(ret);
+
+    cl_mem out_mem = clCreateBuffer(context, CL_MEM_WRITE_ONLY, STR_HASH_LEN, NULL, &ret);
+    if (ret) ret_code(ret);
+
+    cl_kernel kernel = clCreateKernel(program, "sha256", &ret);
+    if (ret) ret_code(ret);
+
+    ret |= clSetKernelArg(kernel, 0, sizeof(cl_mem), &inp_mem);
+    ret |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &out_mem);
+    if (ret) ret_code(ret);
+
+    const size_t glob_wg[] = { 1 };
+    const size_t loc_wg[] = { 1 };
+    ret = clEnqueueNDRangeKernel(queue, kernel, 1, NULL, glob_wg, loc_wg, 0, NULL, NULL);
+    if (ret) ret_code(ret);
+
+    ret = clEnqueueReadBuffer(queue, out_mem, CL_TRUE, 0u, STR_HASH_LEN, out, 0, NULL, NULL);
+    if (ret) ret_code(ret);
+
+    print_buf("Sha256", out, STR_HASH_LEN);
+
+  cleanup:
+    free(input);
+    clReleaseKernel(kernel);
+
+    return ret;
+}
+*/
 
 int sha256(const uint8_t *data, uint8_t *out, size_t len) {
     if (!len) {
@@ -211,7 +259,7 @@ int sha256(const uint8_t *data, uint8_t *out, size_t len) {
     cl_mem out_mem = clCreateBuffer(context, CL_MEM_WRITE_ONLY, STR_HASH_LEN, NULL, &ret);
     if (ret) ret_code(ret);
 
-    cl_kernel kernel = clCreateKernel(program, "sha256", &ret);
+    cl_kernel kernel = clCreateKernel(program, "kern_sha256", &ret);
     if (ret) ret_code(ret);
 
     ret |= clSetKernelArg(kernel, 0, sizeof(cl_mem), &inp_mem);
@@ -219,8 +267,8 @@ int sha256(const uint8_t *data, uint8_t *out, size_t len) {
     ret |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &out_mem);
     if (ret) ret_code(ret);
 
-    const size_t glob_wg[] = { 1 };
-    const size_t loc_wg[] = { 1 };
+    const size_t glob_wg[] = { (UINT32_MAX / 1024) * 1024 };
+    const size_t loc_wg[] = { 1024 };
     ret = clEnqueueNDRangeKernel(queue, kernel, 1, NULL, glob_wg, loc_wg, 0, NULL, NULL);
     if (ret) ret_code(ret);
 
@@ -232,6 +280,20 @@ int sha256(const uint8_t *data, uint8_t *out, size_t len) {
   cleanup:
     free(input);
     clReleaseKernel(kernel);
+
+    return ret;
+}
+
+int double_sha256(uint8_t *input, uint8_t *out, size_t len) {
+    int ret = 0;
+    uint8_t first_out[32];
+
+    ret = sha256(input, first_out, len);
+    if (ret) {
+        return ret;
+    }
+
+    ret = sha256(first_out, out, sizeof first_out);
 
     return ret;
 }

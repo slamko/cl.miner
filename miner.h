@@ -21,4 +21,25 @@
 #define err(str) fprintf(stderr, str);
 #define error(str, ...) fprintf(stderr, str, __VA_ARGS__);
 
+#include <stdint.h>
+
+struct block_header {
+    int32_t version;
+    char prev_hash[32];
+    char merkle_root_hash[32];
+    int32_t time;
+    int32_t target;
+    int32_t nonce;
+};
+
+typedef union hash {
+    uint8_t byte_hash[32];
+    uint32_t uint_hash[8];
+} hash_t;
+
+
+void block_pack(const struct block_header *block, uint8_t raw[BLOCK_RAW_LEN]);
+
+void nbits_to_target(uint32_t nbits, hash_t *target);
+
 #endif

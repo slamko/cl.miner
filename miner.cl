@@ -39,6 +39,13 @@ rotr(19)
 #define Ch(e, f, g) ((e & f) ^ ((~e) & g))
 #define Maj(a, b, c) ((a & b) | (c & (a | b)))
 
+void memcpy_char(__private char *dest, __global char *src, size_t len) {
+
+    for (size_t i = 0; i < len; i++) {
+        dest[i] = src[i];
+    }
+}
+    
 void memcpyui(__global char *dest, uint *src, size_t len) {
 
     for (size_t i = 0; i < len; i++) {
@@ -48,10 +55,14 @@ void memcpyui(__global char *dest, uint *src, size_t len) {
     }
 }
 
-__kernel void sha256(__global __read_only const char *input,
+__kernel void kern_sha256(__global __read_only const char *input,
                      unsigned long len,
                      __global __write_only char *output) {
 
+    if (get_global_id(0) > 0) {
+        return;
+    }
+    
     uint w[64];
 
     uint hi[8] = {
@@ -59,11 +70,11 @@ __kernel void sha256(__global __read_only const char *input,
 	    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
     };
 
-    uint a = hi[0], b = hi[1], c = hi[2], d = hi[3], e = hi[4], f = hi[5], g = hi[6], h = hi[7];
-
     size_t epochs = (len / 64) + (len % 64 ? 1 : 0);
 
     for (size_t epoch = 0; epoch < epochs; epoch++) {
+
+    uint a = hi[0], b = hi[1], c = hi[2], d = hi[3], e = hi[4], f = hi[5], g = hi[6], h = hi[7];
 
     for (size_t i = 0; i < 16; i++) {
         w[i] = (((uint)input[(epoch * 64) + i * 4 + 0] & 0xFF) << 24) |
@@ -101,14 +112,65 @@ __kernel void sha256(__global __read_only const char *input,
     hi[6] += g;
     hi[7] += h;
 
-    a = hi[0];
-    b = hi[1];
-    c = hi[2];
-    d = hi[3];
-    e = hi[4];
-    f = hi[5];
-    g = hi[6];
-    h = hi[7];
+    for (size_t i = 0; i < 8; i++) {
+        // printf("Hi: %x\n", hi[i]);
+    }
+
+    }
+
+    memcpyui(output, hi, 8);
+}
+
+void sha256(__global __read_only const char *input,
+            unsigned long len,
+            __global __write_only char *output) {
+
+    uint w[64];
+
+    uint hi[8] = {
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+	    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+    };
+
+    size_t epochs = (len / 64) + (len % 64 ? 1 : 0);
+
+    for (size_t epoch = 0; epoch < epochs; epoch++) {
+
+    uint a = hi[0], b = hi[1], c = hi[2], d = hi[3], e = hi[4], f = hi[5], g = hi[6], h = hi[7];
+
+    for (size_t t = 0; t < 64; t++) {
+        if (t < 16) { 
+            w[t] = (((uint)input[(epoch * 64) + t * 4 + 0] & 0xFF) << 24) |
+               (((uint)input[(epoch * 64) + t * 4 + 1] & 0xFF) << 16) |
+               (((uint)input[(epoch * 64) + t * 4 + 2] & 0xFF) << 8) |
+               (((uint)input[(epoch * 64) + t * 4 + 3] & 0xFF) );
+        } else {
+
+            w[t] = sigm1(w[t-2]) + w[t - 7] + sigm0(w[t - 15]) + w[t - 16];
+        }
+
+        uint t1 = h + SUM1(e) + Ch(e, f, g) + k[t] + w[t];
+        uint t2 = SUM0(a) + Maj(a, b, c);
+        // printf("W: %x : %x\n", w[t], ((uint)input[1]));
+
+        h = g;
+        g = f;
+        f = e;
+        e = d + t1;
+        d = c;
+        c = b;
+        b = a;
+        a = t1 + t2;
+    }
+
+    hi[0] += a;
+    hi[1] += b;
+    hi[2] += c;
+    hi[3] += d;
+    hi[4] += e;
+    hi[5] += f;
+    hi[6] += g;
+    hi[7] += h;
 
     for (size_t i = 0; i < 8; i++) {
         // printf("Hi: %x\n", hi[i]);
@@ -117,4 +179,94 @@ __kernel void sha256(__global __read_only const char *input,
     }
 
     memcpyui(output, hi, 8);
+}
+
+
+void loc_sha256(const char *input,
+                uint *hi,
+                unsigned long len,
+                char *output) {
+    uint w[64];
+    size_t epochs = (len / 64) + (len % 64 ? 1 : 0);
+
+    for (size_t epoch = 0; epoch < epochs; epoch++) {
+
+    uint a = hi[0], b = hi[1], c = hi[2], d = hi[3], e = hi[4], f = hi[5], g = hi[6], h = hi[7];
+
+    for (size_t t = 0; t < 64; t++) {
+        if (t < 16) { 
+            w[t] = (((uint)input[(epoch * 64) + t * 4 + 0] & 0xFF) << 24) |
+               (((uint)input[(epoch * 64) + t * 4 + 1] & 0xFF) << 16) |
+               (((uint)input[(epoch * 64) + t * 4 + 2] & 0xFF) << 8) |
+               (((uint)input[(epoch * 64) + t * 4 + 3] & 0xFF) );
+        } else {
+
+            w[t] = sigm1(w[t-2]) + w[t - 7] + sigm0(w[t - 15]) + w[t - 16];
+        }
+
+        uint t1 = h + SUM1(e) + Ch(e, f, g) + k[t] + w[t];
+        uint t2 = SUM0(a) + Maj(a, b, c);
+        // printf("W: %x : %x\n", w[t], ((uint)input[1]));
+
+        h = g;
+        g = f;
+        f = e;
+        e = d + t1;
+        d = c;
+        c = b;
+        b = a;
+        a = t1 + t2;
+    }
+
+    hi[0] += a;
+    hi[1] += b;
+    hi[2] += c;
+    hi[3] += d;
+    hi[4] += e;
+    hi[5] += f;
+    hi[6] += g;
+    hi[7] += h;
+
+    for (size_t i = 0; i < 8; i++) {
+        // printf("Hi: %x\n", hi[i]);
+    }
+
+    }
+
+    memcpyui(output, hi, 8);
+}
+
+__kernel void mine256(__global char *block_raw, __global char *target,
+                      __global uint *nonce) {
+    size_t cur_nonce = get_global_id(0);
+    
+    __private char my_raw[128];
+    memcpy_char(my_raw, block_raw, 64);
+
+    for (size_t i = 0; i < 4; i++) {
+        my_raw[(80 - 4) + i] = (cur_nonce >> 8 * (3 - i)) & 0xFF;
+    }
+
+    __private char first_out[64];
+    __private char out[32];
+    uint hi[8] = {
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+	    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+    };
+
+    loc_sha256(my_raw, hi, 128, first_out);
+    loc_sha256(first_out, hi, 64, out);
+
+    for (size_t i = 0; i < 32; i++) {
+        if (target[i] > out[i]) {
+            atomic_store(nonce, cur_nonce);
+            return;
+        } 
+
+        if (out[i] > target[i]) {
+            return;
+        }
+    }
+
+    atomic_store(nonce, cur_nonce);
 }

@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <jansson.h>
 #include <stdint.h>
+#include <arpa/inet.h>
 #include "miner.h"
 #include "ocl.h"
 
@@ -127,6 +128,58 @@ void test() {
     }
 }
 
+typedef union hash {
+    uint8_t byte_hash[32];
+    uint32_t uint_hash[8];
+} hash_t;
+
+void hash_print(const char *name, hash_t *hash) {
+    printf("\n%s\n", name);
+    for (size_t i = 0; i < ARR_LEN(hash->uint_hash); i++) {
+        printf("%08x", hash->uint_hash[7 - i]);
+    }
+}
+
+void nbits_to_target(uint32_t nbits, hash_t *target) {
+    uint32_t big_nbits = htonl(nbits);
+    uint8_t exp = big_nbits >> 24;
+    uint32_t mantissa = big_nbits & 0x00FFFFFF;
+
+    memset(target->uint_hash, 0, sizeof target->uint_hash);
+    
+    size_t id = exp / sizeof(*target->uint_hash);
+
+    switch (exp % sizeof(*target->uint_hash)) {
+    case 0: {
+        if (id) {
+            target->uint_hash[id - 1] = mantissa << 8;
+    printf("BIg: %x\n", mantissa);
+        }
+        break;
+    }
+    case 1: {
+        target->uint_hash[id] = mantissa >> 16;
+
+        if (id) {
+            target->uint_hash[id - 1] = mantissa << 16;
+        }
+        break;
+    }
+    case 2: {
+        target->uint_hash[id] = mantissa >> 8;
+
+        if (id) {
+            target->uint_hash[id - 1] = mantissa << 24;
+        }
+        break;
+    }
+    case 3: {
+        target->uint_hash[id] = mantissa;
+        break;
+    }
+    }
+}
+
 int main(void) {
     CURL *curl = curl_easy_init();
 
@@ -158,6 +211,10 @@ int main(void) {
         printf("Error occured: %d\n", ret);
         exit(ret);
     }
+
+    hash_t target = {0}; 
+    nbits_to_target(0x30c31b18, &target);
+    hash_print("Target", &target);
    
     curl_easy_cleanup(curl);
     ocl_free();

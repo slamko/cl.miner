@@ -238,8 +238,12 @@ int mine(struct block_header *block, hash_t *target, hash_t *hash) {
         ret_code(1);
     }
 
-    const size_t glob_wg[] = { align_down(UINT16_MAX, 1024) };
-    const size_t loc_wg[] = { 1024 };
+    /* const size_t glob_wg[] = { align_down(UINT16_MAX, 1024) }; */
+    /* const size_t loc_wg[] = { 1024 }; */
+
+    const size_t glob_wg[] = { 1 };
+    const size_t loc_wg[] = { 1 };
+
     ret = clEnqueueNDRangeKernel(queue, kernel, 1, NULL, glob_wg, loc_wg, 0, NULL, NULL);
     if (ret) {
         error("Kernel execution failed: %s\n", getErrorString(ret));
@@ -258,9 +262,10 @@ int mine(struct block_header *block, hash_t *target, hash_t *hash) {
     block_input[BLOCK_RAW_LEN] = 0x80;
 
     uint8_t ou[32];
-    double_sha256(block_input, ou, 128);
+    double_sha256(block_input, ou, 80);
+    print_buf("Proved: ", ou, 32);
 
-    printf("Nonce: %d\n", nonce);
+    /* printf("Nonce: %d\n", nonce); */
 
   cleanup:
     if (kernel) clReleaseKernel(kernel);
@@ -288,7 +293,7 @@ int sha256(const uint8_t *data, uint8_t *out, size_t len) {
     memcpy((char *)(input + al_inp_size - sizeof(big_len)), &big_len, sizeof(big_len));
 
     print_buf("Input", input, al_inp_size);
-    printf("Inp: %zu\n", al_inp_size);
+    printf("Inp: %zu\n", len);
 
     cl_int ret = {0};
 
@@ -306,8 +311,10 @@ int sha256(const uint8_t *data, uint8_t *out, size_t len) {
     ret |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &out_mem);
     if (ret) ret_code(ret);
 
-    const size_t glob_wg[] = { (UINT32_MAX / 1024) * 1024 };
-    const size_t loc_wg[] = { 1024 };
+    /* const size_t glob_wg[] = { (UINT32_MAX / 1024) * 1024 }; */
+    /* const size_t loc_wg[] = { 1024 }; */
+    const size_t glob_wg[] = { 1 };
+    const size_t loc_wg[] = { 1 };
     ret = clEnqueueNDRangeKernel(queue, kernel, 1, NULL, glob_wg, loc_wg, 0, NULL, NULL);
     if (ret) ret_code(ret);
 

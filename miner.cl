@@ -39,14 +39,14 @@ rotr(19)
 #define Ch(e, f, g) ((e & f) ^ ((~e) & g))
 #define Maj(a, b, c) ((a & b) | (c & (a | b)))
 
-void memcpy_char(__private char *dest, __global char *src, size_t len) {
+void memcpy_char(__private unsigned char *dest, __global unsigned char *src, size_t len) {
 
     for (size_t i = 0; i < len; i++) {
         dest[i] = src[i];
     }
 }
     
-void memcpyui(__global char *dest, uint *src, size_t len) {
+void memcpyui(__global unsigned char *dest, uint *src, size_t len) {
 
     for (size_t i = 0; i < len; i++) {
         for (int j = 0; j < 4; j++) {
@@ -55,7 +55,7 @@ void memcpyui(__global char *dest, uint *src, size_t len) {
     }
 }
 
-void memcpy_priv(__private char *dest, uint *src, size_t len) {
+void memcpy_priv(__private unsigned char *dest, __private uint *src, size_t len) {
 
     for (size_t i = 0; i < len; i++) {
         for (int j = 0; j < 4; j++) {
@@ -64,9 +64,9 @@ void memcpy_priv(__private char *dest, uint *src, size_t len) {
     }
 }
 
-__kernel void kern_sha256(__global __read_only const char *input,
+__kernel void kern_sha256(__global __read_only const unsigned char *input,
                      unsigned long len,
-                     __global __write_only char *output) {
+                     __global __write_only unsigned char *output) {
 
     if (get_global_id(0) > 0) {
         return;
@@ -130,9 +130,9 @@ __kernel void kern_sha256(__global __read_only const char *input,
     memcpyui(output, hi, 8);
 }
 
-void sha256(__global __read_only const char *input,
+void sha256(__global __read_only const unsigned char *input,
             unsigned long len,
-            __global __write_only char *output) {
+            __global __write_only unsigned char *output) {
 
     uint w[64];
 
@@ -191,10 +191,10 @@ void sha256(__global __read_only const char *input,
 }
 
 
-void loc_sha256(const char *input,
-                uint *hi,
+void loc_sha256(__private const unsigned char *input,
+                __private uint *hi,
                 unsigned long len,
-                char *output) {
+                __private unsigned char *output) {
     uint w[64];
     size_t epochs = (len / 64) + (len % 64 ? 1 : 0);
 
@@ -236,40 +236,49 @@ void loc_sha256(const char *input,
     hi[6] += g;
     hi[7] += h;
 
-    for (size_t i = 0; i < 8; i++) {
-        // printf("Hi: %x\n", hi[i]);
-    }
-
     }
 
     memcpy_priv(output, hi, 8);
 }
 
-__kernel void mine256(__global char *block_raw, __global char *target,
+__kernel void mine256(__global unsigned char *block_raw, __global unsigned char *target,
                       __global uint *nonce) {
     size_t cur_nonce = get_global_id(0);
     
-    __private char my_raw[128];
-    memcpy_char(my_raw, block_raw, 64);
+    __private unsigned char my_raw[128] = {0};
+    memcpy_char(my_raw, block_raw, 128);
 
     for (size_t i = 0; i < 4; i++) {
-        my_raw[(80 - 4) + i] = (cur_nonce >> 8 * (3 - i)) & 0xFF;
+        // my_raw[(80 - 4) + i] = (cur_nonce >> 8 * (3 - i)) & 0xFF;
     }
 
-    __private char first_out[64];
-    __private char out[32];
+    printf("My input: ");
+    for (size_t i = 0; i < 128; i++) {
+        printf("%02x", my_raw[i]);
+    }
+    printf("\n");
 
-    uint hi[8] = {
+    __private unsigned char first_out[64] = {0};
+    __private unsigned char out[32] = {0};
+
+    __private uint hi[8] = {
         0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
 	    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
     };
 
     loc_sha256(my_raw, hi, 128, first_out);
-    loc_sha256(first_out, hi, 64, out);
+    // first_out[32] = 0x80;
+    // loc_sha256(first_out, hi, 64, out);
 
-    for (size_t i = 31; i >= 0; i--) {
+    printf("Buf: ");
+    for (size_t i = 0; i < 32; i++) {
+        printf("%x", first_out[i]);
+    }
+    printf("\n");
+
+    for (size_t i = 0; i < 32; i++) {
         if (target[i] > out[i]) {
-            printf("Hash: %x > %x\n", target[i] , out[i]);
+            // printf("Hash: %x > %x\n", target[i] , out[i]);
             atomic_xchg(nonce, cur_nonce);
             return;
         }

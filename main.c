@@ -220,6 +220,7 @@ CURLcode get_block_template(CURL *curl, struct block_header *template) {
 
     ret = build_transaction_list(transactions, &tlist);
     if (ret) {
+        memset(template->merkle_root_hash, 0, sizeof template->merkle_root_hash);
         err("Aborting merkle root hash calculation\n");
         ret_code(ret);
     }
@@ -349,6 +350,8 @@ void nbits_to_target(uint32_t nbits, hash_t *target) {
         break;
     }
     }
+
+    target->byte_hash[31] = 0;
 }
 
 int main(void) {
@@ -382,6 +385,7 @@ int main(void) {
         printf("Error occured: %d\n", ret);
         exit(ret);
     }
+
     struct block_header header;
     get_block_template(curl, &header);
 
@@ -389,6 +393,11 @@ int main(void) {
     nbits_to_target(header.target, &target);
     hash_print("Target: ", &target);
     ocl_version();
+
+    hash_t mined_hash;
+    if (mine(&header, &target, &mined_hash)) {
+        err("Block mining failed: \n");
+    }
    
     curl_easy_cleanup(curl);
     ocl_free();

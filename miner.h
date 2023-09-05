@@ -1,7 +1,14 @@
 #ifndef MINER_H
 #define MINER_H
 
+#define REG_TEST
+
+#ifdef REG_TEST
+#define BITCOIND_URL "http://127.0.0.1:18443"
+#else
 #define BITCOIND_URL "http://127.0.0.1:8333"
+#endif
+
 #define HASH_LEN 256
 #define STR_HASH_LEN (HASH_LEN / 8)
 
@@ -9,6 +16,7 @@
 
 #define ARR_LEN(x) (sizeof(x) / sizeof(*(x)))
 #define align(x, al) (size_t)((((x) / (al)) * (al)) + (((x) % (al)) ? (al) : 0))
+#define align_down(x, al) (size_t) (((x) / (al)) * (al)) 
 
 #define BLOCK_RAW_LEN 80
 
@@ -33,9 +41,9 @@ struct block_header {
     int32_t version;
     char prev_hash[32];
     char merkle_root_hash[32];
-    int32_t time;
-    int32_t target;
-    int32_t nonce;
+    uint32_t time;
+    uint32_t target;
+    uint32_t nonce;
 };
 
 typedef union hash {

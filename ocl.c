@@ -187,7 +187,7 @@ void print_buf(const char *name, const uint8_t *buf, size_t len) {
     putc('\n', stdout);
 }
 
-int mine(const struct block_header *block, hash_t *target, hash_t *hash) {
+int mine(struct block_header *block, hash_t *target, hash_t *hash) {
     if (!block || !target || !hash) {
         return 1;
     }
@@ -206,40 +206,70 @@ int mine(const struct block_header *block, hash_t *target, hash_t *hash) {
     cl_int ret = {0};
 
     cl_mem inp_mem = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof block_input, block_input, &ret);
-    if (ret) return (ret);
+    if (ret) {
+        error("Failed to allocate OCL buffer: %s\n", getErrorString(ret));
+        return (1);
+    }
 
     cl_mem target_mem = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof target->byte_hash, target->byte_hash, &ret);
-    if (ret) ret_label(clean_inp_mem, ret);
+    if (ret) {
+        error("Failed to allocate OCL buffer: %s\n", getErrorString(ret));
+        ret_label(clean_inp_mem, 1);
+    }
 
-    cl_mem nonce_mem = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof (cl_ulong), NULL, &ret);
-    if (ret) ret_label(clean_target_mem, ret);
+    cl_mem nonce_mem = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof (cl_ulong), NULL, &ret);
+    if (ret) {
+        error("Failed to allocate OCL buffer: %s\n", getErrorString(ret));
+        ret_label(clean_target_mem, 1);
+    }
 
     kernel = clCreateKernel(program, "mine256", &ret);
-    if (ret) ret_label(clean_nonce_mem, ret);
+    if (ret) {
+        error("OCL kernel creation failed: %s\n", getErrorString(ret));
+        ret_label(clean_nonce_mem, 1);
+    }
 
     ret |= clSetKernelArg(kernel, 0, sizeof(cl_mem), &inp_mem);
     ret |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &target_mem);
     ret |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &nonce_mem);
-    if (ret) ret_code(ret);
 
-    const size_t glob_wg[] = { UINT32_MAX };
+    if (ret) {
+        error("Invalid kernel args: %s\n", getErrorString(ret));
+        ret_code(1);
+    }
+
+    const size_t glob_wg[] = { align_down(UINT16_MAX, 1024) };
     const size_t loc_wg[] = { 1024 };
     ret = clEnqueueNDRangeKernel(queue, kernel, 1, NULL, glob_wg, loc_wg, 0, NULL, NULL);
-    if (ret) ret_code(ret);
+    if (ret) {
+        error("Kernel execution failed: %s\n", getErrorString(ret));
+        ret_code(1);
+    }
 
-    uint32_t nonce;
-    ret = clEnqueueReadBuffer(queue, nonce_mem, CL_TRUE, 0u, STR_HASH_LEN, &nonce, 0, NULL, NULL);
-    if (ret) ret_code(ret);
+    uint32_t nonce = 0;
+    ret = clEnqueueReadBuffer(queue, nonce_mem, CL_TRUE, 0u, sizeof (cl_ulong), &nonce, 0, NULL, NULL);
+    if (ret) {
+        error("Failed to read nonce buffer: %s\n", getErrorString(ret));
+        ret_code(1);
+    }
+
+    block->nonce = nonce;
+    block_pack(block, block_input);
+    block_input[BLOCK_RAW_LEN] = 0x80;
+
+    uint8_t ou[32];
+    double_sha256(block_input, ou, 128);
+
+    printf("Nonce: %d\n", nonce);
 
   cleanup:
-    if (kernel)
-        clReleaseKernel(kernel);
+    if (kernel) clReleaseKernel(kernel);
   clean_nonce_mem:
     clReleaseMemObject(nonce_mem);
   clean_target_mem:
     clReleaseMemObject(target_mem);
   clean_inp_mem:
-    clReleaseMemObject(inp_mem);
+    /* clReleaseMemObject(inp_mem); */
 
     return ret;
 }

@@ -258,6 +258,7 @@ __kernel void mine256(__global char *block_raw, __global char *target,
 
     __private char first_out[64];
     __private char out[32];
+
     uint hi[8] = {
         0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
 	    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
@@ -266,9 +267,10 @@ __kernel void mine256(__global char *block_raw, __global char *target,
     loc_sha256(my_raw, hi, 128, first_out);
     loc_sha256(first_out, hi, 64, out);
 
-    for (size_t i = 0; i < 32; i++) {
+    for (size_t i = 31; i >= 0; i--) {
         if (target[i] > out[i]) {
-            // atomic_store(nonce, cur_nonce);
+            printf("Hash: %x > %x\n", target[i] , out[i]);
+            atomic_xchg(nonce, cur_nonce);
             return;
         }
 
@@ -277,5 +279,5 @@ __kernel void mine256(__global char *block_raw, __global char *target,
         }
     }
 
-    // atomic_store(nonce, cur_nonce);
+    atomic_xchg(nonce, cur_nonce);
 }

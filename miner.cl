@@ -253,7 +253,7 @@ __kernel void mine256(__global unsigned char *block_raw, __global unsigned char 
     memcpy_char(my_raw, block_raw, 128);
 
     for (size_t i = 0; i < 4; i++) {
-        // my_raw[(80 - 4) + i] = (cur_nonce >> 8 * (3 - i)) & 0xFF;
+        my_raw[(80 - 4) + i] = (cur_nonce >> 8 * i) & 0xFF;
     }
 
     __private unsigned char first_out[64] = {0};
@@ -264,6 +264,8 @@ __kernel void mine256(__global unsigned char *block_raw, __global unsigned char 
     first_out[62] = 0x01; 
 
     loc_sha256(first_out, 64, out);
+
+    printf("Hash: %u : %lu : %x\n", get_global_id(0), cur_nonce, out[0]);
 
     for (size_t i = 0; i < 32; i++) {
         if (target[31 - i] > out[i]) {

@@ -238,11 +238,11 @@ int mine(struct block_header *block, hash_t *target, hash_t *hash) {
         ret_code(1);
     }
 
-    /* const size_t glob_wg[] = { align_down(UINT16_MAX, 1024) }; */
-    /* const size_t loc_wg[] = { 1024 }; */
+    const size_t glob_wg[] = { 32 * align_down(UINT16_MAX, 1024) };
+    const size_t loc_wg[] = { 1024 };
 
-    const size_t glob_wg[] = { 1 };
-    const size_t loc_wg[] = { 1 };
+    /* const size_t glob_wg[] = { 2 }; */
+    /* const size_t loc_wg[] = { 2 }; */
 
     ret = clEnqueueNDRangeKernel(queue, kernel, 1, NULL, glob_wg, loc_wg, 0, NULL, NULL);
     if (ret) {
@@ -258,14 +258,14 @@ int mine(struct block_header *block, hash_t *target, hash_t *hash) {
     }
 
     block->nonce = nonce;
-    block_pack(block, block_input);
-    block_input[BLOCK_RAW_LEN] = 0x80;
+    uint8_t new_bin[80] = {0};
+    block_pack(block, new_bin);
 
     uint8_t ou[32];
-    double_sha256(block_input, ou, 80);
+    double_sha256(new_bin, ou, 80);
     print_buf("Proved: ", ou, 32);
 
-    printf("Nonce: %d\n", nonce);
+    printf("Nonce: %d\n", block->nonce);
 
   cleanup:
     if (kernel) clReleaseKernel(kernel);

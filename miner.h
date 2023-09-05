@@ -1,7 +1,7 @@
 #ifndef MINER_H
 #define MINER_H
 
-#define BITCOIND_URL "http://127.0.0.1:8332"
+#define BITCOIND_URL "http://127.0.0.1:8333"
 #define HASH_LEN 256
 #define STR_HASH_LEN (HASH_LEN / 8)
 

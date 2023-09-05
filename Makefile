@@ -5,6 +5,8 @@ SRC =
 SRC += ocl.c
 SRC += main.c
 
+HEADERS = $(wildcard *.h)
+
 LIBS = -lcurl -ljansson -lOpenCL
 
 OBJS = $(patsubst %.c,%.o,$(SRC))
@@ -17,9 +19,9 @@ all: $(EXE)
 $(EXE): $(BUILD_OBJS)
 	$(CC) $^ $(FLAGS) $(LIBS) -o $@
 
-$(BUILD_OBJS): $(SRC)
+$(BUILD_OBJS): $(SRC) $(HEADERS)
 	mkdir -p build
-	$(CC) -c $(FLAGS) $^
+	$(CC) -c $(FLAGS) $(SRC)
 	mv $(OBJS) build
 
 run: $(EXE)

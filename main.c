@@ -44,6 +44,11 @@ void build_merkle_root(struct transaction *tlist, size_t len, hash_t *merkle_roo
 int build_transaction_list(json_t *t_arr, transaction_list_t *tlist) {
     int ret = 0;
     size_t t_len = json_array_size(t_arr);
+    if (!t_len) {
+        err("Invalid transaction list\n");
+        return 1;
+    }
+    
     tlist->tlist = calloc(t_len, sizeof *tlist->tlist);
     tlist->len = t_len;
 
@@ -123,6 +128,10 @@ CURLcode json_rpc(CURL *curl, const char *post_data, char **dest_str) {
     curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_TRY);
     
     CURLcode ret = curl_easy_perform(curl);
+    if (ret) {
+        error("Curl error: %s\n", errbuf);
+    }
+    
     curl_slist_free_all(headers);
     return ret;
 }
@@ -131,7 +140,7 @@ const char *blocktemplate_post_data = R(
     {"jsonrpc": 2.0,
      "id": "cumainer",
      "method": "getblocktemplate",
-     "params": []
+     "params": [{"rules": ["segwit"]}]
     }
     );
 
@@ -139,7 +148,7 @@ const char *bestblock_post_data = R(
     {"jsonrpc": 2.0,
      "id": "cumainer",
      "method": "getbestblockhash",
-     "params": {"rules": ["segwit"]}
+     "params": [] 
     }
     );
 
@@ -148,8 +157,13 @@ CURLcode get_json(CURL *curl, const char *post, json_t **json) {
     CURLcode ret;
     json_error_t err = {0};
    
-    ret = json_rpc(curl, blocktemplate_post_data, &json_str);
+    ret = json_rpc(curl, post, &json_str);
+    if (ret) {
+        error("RPC error: %d\n", ret);
+        ret_code(ret);
+    }
 
+    puts(json_str);
     *json = json_loads(json_str, JSON_ALLOW_NUL | JSON_DECODE_ANY, &err);
 
     if (!json) {
@@ -164,24 +178,33 @@ CURLcode get_json(CURL *curl, const char *post, json_t **json) {
 
 CURLcode get_block_template(CURL *curl, struct block_header *template) {
     CURLcode ret = 1;
-    json_t *json;
+    json_t *json = NULL;
+    json_t *result = NULL;
     char *nbits = NULL;
-    json_t *transactions;
+    json_t *transactions = NULL;
 
     if (get_json(curl, blocktemplate_post_data, &json)) {
         err("Json rpc failed\n");
         ret_code(1);
     }
+
+    if ((ret = json_unpack(json, "{s:O}",
+                           "result",
+                           &result))) {
+        err("Unknown bitcoind response format\n");
+        ret_code(ret);
+    }
     
-    if (json_unpack(json, "{s:s, s:i, s:i, s:i, s:o}",
-                    "previousblockhash", &template->prev_hash,
-                    "curtime", &template->time,
-                    "bits", &nbits,
-                    "version", &template->version,
-                    "transactions", &transactions)) {
+    if ((ret = json_unpack(result,
+                           "{s:i, s:s, s:o, s:i, s:s}",
+                           "version", &template->version,
+                           "previousblockhash", &template->prev_hash,
+                           "transactions", &transactions,
+                           "curtime", &template->time,
+                           "bits", &nbits))) {
 
         err("Unknown bitcoind response format\n");
-        ret_code(1);
+        ret_code(ret);
     }
 
     if (!transactions || !nbits) {
@@ -192,8 +215,14 @@ CURLcode get_block_template(CURL *curl, struct block_header *template) {
     memcpy(&template->target, nbits, sizeof template->target);
 
     transaction_list_t tlist = {0};
-    hash_t merkle_root;
-    build_transaction_list(transactions, &tlist);
+    hash_t merkle_root = {0};
+
+    ret = build_transaction_list(transactions, &tlist);
+    if (ret) {
+        err("Aborting merkle root hash calculation\n");
+        ret_code(ret);
+    }
+    
     build_merkle_root(tlist.tlist, tlist.len, &merkle_root);
 
     memcpy(template->merkle_root_hash, merkle_root.byte_hash, sizeof template->merkle_root_hash);
@@ -203,9 +232,9 @@ CURLcode get_block_template(CURL *curl, struct block_header *template) {
         json_decref(json);
     }
 
-    /* if (transactions) { */
-        /* json_decref(json); */
-    /* } */
+    if (result) {
+        json_decref(result);
+    }
 
     return ret;
 }
@@ -226,7 +255,7 @@ CURLcode get_best_block_hash(CURL *curl, struct best_block_hash *res) {
 
     char *result;
     if (json_unpack(best_block_json, "{s:s}", "result", &result)) {
-        err("Unknown bitcoind response format\n");
+        err("get_best_block: Unknown bitcoind response format\n");
         ret_code(1);
     }
 
@@ -277,6 +306,8 @@ void hash_print(const char *name, hash_t *hash) {
     for (size_t i = 0; i < ARR_LEN(hash->uint_hash); i++) {
         printf("%08x", hash->uint_hash[7 - i]);
     }
+    putc('\n', stdout);
+    fflush(stdout);
 }
 
 void nbits_to_target(uint32_t nbits, hash_t *target) {
@@ -343,15 +374,17 @@ int main(void) {
     uint8_t raw[80];
     block_pack(&block, raw);
 
-    uint8_t out[STR_HASH_LEN] = {0};
-    ret = sha256(raw, out, sizeof raw);
+    /* uint8_t out[STR_HASH_LEN] = {0}; */
+    /* ret = sha256(raw, out, sizeof raw); */
 
     if (ret) {
         printf("Error occured: %d\n", ret);
         exit(ret);
     }
+    struct block_header header;
+    get_block_template(curl, &header);
 
-    hash_t target = {0}; 
+    hash_t target = {0};
     nbits_to_target(0x30c31b18, &target);
     hash_print("Target", &target);
    

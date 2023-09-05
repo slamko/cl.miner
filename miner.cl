@@ -55,6 +55,15 @@ void memcpyui(__global char *dest, uint *src, size_t len) {
     }
 }
 
+void memcpy_priv(__private char *dest, uint *src, size_t len) {
+
+    for (size_t i = 0; i < len; i++) {
+        for (int j = 0; j < 4; j++) {
+            dest[(i * 4) + (3 - j)] = (src[i] >> (8 * j)) & 0xFF;
+        }
+    }
+}
+
 __kernel void kern_sha256(__global __read_only const char *input,
                      unsigned long len,
                      __global __write_only char *output) {
@@ -233,7 +242,7 @@ void loc_sha256(const char *input,
 
     }
 
-    memcpyui(output, hi, 8);
+    memcpy_priv(output, hi, 8);
 }
 
 __kernel void mine256(__global char *block_raw, __global char *target,
@@ -259,14 +268,14 @@ __kernel void mine256(__global char *block_raw, __global char *target,
 
     for (size_t i = 0; i < 32; i++) {
         if (target[i] > out[i]) {
-            atomic_store(nonce, cur_nonce);
+            // atomic_store(nonce, cur_nonce);
             return;
-        } 
+        }
 
         if (out[i] > target[i]) {
             return;
         }
     }
 
-    atomic_store(nonce, cur_nonce);
+    // atomic_store(nonce, cur_nonce);
 }

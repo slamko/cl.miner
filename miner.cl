@@ -246,7 +246,11 @@ void loc_sha256(__private const unsigned char *input,
 }
 
 __kernel void mine256(__global unsigned char *block_raw, __global unsigned char *target,
-                      __global uint *nonce) {
+                      __global __read_write uint *nonce) {
+    if (*nonce > 0) {
+        return;
+    }
+    
     size_t cur_nonce = get_global_id(0);
     
     __private unsigned char my_raw[128] = {0};

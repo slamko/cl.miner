@@ -217,7 +217,8 @@ int mine(struct block_header *block, hash_t *target, hash_t *hash) {
         ret_label(clean_inp_mem, 1);
     }
 
-    cl_mem nonce_mem = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof (cl_ulong), NULL, &ret);
+    uint32_t nonce = 0;
+    cl_mem nonce_mem = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof (cl_ulong), &nonce, &ret);
     if (ret) {
         error("Failed to allocate OCL buffer: %s\n", getErrorString(ret));
         ret_label(clean_target_mem, 1);
@@ -238,7 +239,7 @@ int mine(struct block_header *block, hash_t *target, hash_t *hash) {
         ret_code(1);
     }
 
-    const size_t glob_wg[] = { 32 * align_down(UINT16_MAX, 1024) };
+    const size_t glob_wg[] = { align_down(UINT32_MAX, 1024) };
     const size_t loc_wg[] = { 1024 };
 
     /* const size_t glob_wg[] = { 2 }; */
@@ -250,7 +251,6 @@ int mine(struct block_header *block, hash_t *target, hash_t *hash) {
         ret_code(1);
     }
 
-    uint32_t nonce = 0;
     ret = clEnqueueReadBuffer(queue, nonce_mem, CL_TRUE, 0u, sizeof (cl_ulong), &nonce, 0, NULL, NULL);
     if (ret) {
         error("Failed to read nonce buffer: %s\n", getErrorString(ret));

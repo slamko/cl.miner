@@ -388,6 +388,7 @@ int main(void) {
     hash_t target = {0};
     nbits_to_target(header.target, &target);
     hash_print("Target: ", &target);
+    ocl_version();
    
     curl_easy_cleanup(curl);
     ocl_free();

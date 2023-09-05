@@ -18,6 +18,12 @@
     goto cleanup;                                                              \
   }
 
+#define ret_label(label, x)                                              \
+  {                                                                            \
+    ret = x;                                                                   \
+    goto label;                                                              \
+  }
+
 #define err(str) fprintf(stderr, str);
 #define error(str, ...) fprintf(stderr, str, __VA_ARGS__);
 

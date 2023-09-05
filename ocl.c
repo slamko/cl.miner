@@ -186,12 +186,13 @@ void print_buf(const char *name, const uint8_t *buf, size_t len) {
     }
     putc('\n', stdout);
 }
-/*
+
 int mine(const struct block_header *block, hash_t *target, hash_t *hash) {
     if (!block || !target || !hash) {
         return 1;
     }
 
+    cl_kernel kernel = {0};
     uint8_t block_input[128] = {0};
 
     block_pack(block, block_input);
@@ -205,35 +206,43 @@ int mine(const struct block_header *block, hash_t *target, hash_t *hash) {
     cl_int ret = {0};
 
     cl_mem inp_mem = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof block_input, block_input, &ret);
-    if (ret) ret_code(ret);
+    if (ret) return (ret);
 
-    cl_mem out_mem = clCreateBuffer(context, CL_MEM_WRITE_ONLY, STR_HASH_LEN, NULL, &ret);
-    if (ret) ret_code(ret);
+    cl_mem target_mem = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof target->byte_hash, target->byte_hash, &ret);
+    if (ret) ret_label(clean_inp_mem, ret);
 
-    cl_kernel kernel = clCreateKernel(program, "sha256", &ret);
-    if (ret) ret_code(ret);
+    cl_mem nonce_mem = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof (cl_ulong), NULL, &ret);
+    if (ret) ret_label(clean_target_mem, ret);
+
+    kernel = clCreateKernel(program, "mine256", &ret);
+    if (ret) ret_label(clean_nonce_mem, ret);
 
     ret |= clSetKernelArg(kernel, 0, sizeof(cl_mem), &inp_mem);
-    ret |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &out_mem);
+    ret |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &target_mem);
+    ret |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &nonce_mem);
     if (ret) ret_code(ret);
 
-    const size_t glob_wg[] = { 1 };
-    const size_t loc_wg[] = { 1 };
+    const size_t glob_wg[] = { UINT32_MAX };
+    const size_t loc_wg[] = { 1024 };
     ret = clEnqueueNDRangeKernel(queue, kernel, 1, NULL, glob_wg, loc_wg, 0, NULL, NULL);
     if (ret) ret_code(ret);
 
-    ret = clEnqueueReadBuffer(queue, out_mem, CL_TRUE, 0u, STR_HASH_LEN, out, 0, NULL, NULL);
+    uint32_t nonce;
+    ret = clEnqueueReadBuffer(queue, nonce_mem, CL_TRUE, 0u, STR_HASH_LEN, &nonce, 0, NULL, NULL);
     if (ret) ret_code(ret);
 
-    print_buf("Sha256", out, STR_HASH_LEN);
-
   cleanup:
-    free(input);
-    clReleaseKernel(kernel);
+    if (kernel)
+        clReleaseKernel(kernel);
+  clean_nonce_mem:
+    clReleaseMemObject(nonce_mem);
+  clean_target_mem:
+    clReleaseMemObject(target_mem);
+  clean_inp_mem:
+    clReleaseMemObject(inp_mem);
 
     return ret;
 }
-*/
 
 int sha256(const uint8_t *data, uint8_t *out, size_t len) {
     if (!len) {
@@ -296,6 +305,17 @@ int double_sha256(uint8_t *input, uint8_t *out, size_t len) {
     ret = sha256(first_out, out, sizeof first_out);
 
     return ret;
+}
+
+void ocl_version(void) {
+    char driver_version[64];
+
+    if (clGetDeviceInfo(device, CL_DEVICE_OPENCL_C_VERSION, sizeof driver_version, &driver_version, NULL)) {
+        err("Error getting version information\n");
+        return;
+    }
+    
+    printf("Version: %s\n", driver_version);
 }
 
 int ocl_free(void) {

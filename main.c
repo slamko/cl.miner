@@ -212,7 +212,8 @@ CURLcode get_block_template(CURL *curl, struct block_header *template) {
         ret_code(1);
     }
 
-    memcpy(&template->target, nbits, sizeof template->target);
+    template->target = strtoul(nbits, NULL, 16);
+    printf("Nbits: %x\n", template->target);
 
     transaction_list_t tlist = {0};
     hash_t merkle_root = {0};
@@ -311,7 +312,7 @@ void hash_print(const char *name, hash_t *hash) {
 }
 
 void nbits_to_target(uint32_t nbits, hash_t *target) {
-    uint32_t big_nbits = htonl(nbits);
+    uint32_t big_nbits = nbits;
     uint8_t exp = big_nbits >> 24;
     uint32_t mantissa = big_nbits & 0x00FFFFFF;
 
@@ -323,7 +324,7 @@ void nbits_to_target(uint32_t nbits, hash_t *target) {
     case 0: {
         if (id) {
             target->uint_hash[id - 1] = mantissa << 8;
-    printf("BIg: %x\n", mantissa);
+            printf("BIg: %x\n", mantissa);
         }
         break;
     }
@@ -385,8 +386,8 @@ int main(void) {
     get_block_template(curl, &header);
 
     hash_t target = {0};
-    nbits_to_target(0x30c31b18, &target);
-    hash_print("Target", &target);
+    nbits_to_target(header.target, &target);
+    hash_print("Target: ", &target);
    
     curl_easy_cleanup(curl);
     ocl_free();

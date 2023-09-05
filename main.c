@@ -8,6 +8,31 @@
 #include <arpa/inet.h>
 #include "ocl.h"
 
+const char *blocktemplate_post_data = R(
+    {"jsonrpc": 2.0,
+     "id": "cumainer",
+     "method": "getblocktemplate",
+     "params": [{"rules": ["segwit"]}]
+    }
+    );
+
+const char *bestblock_post_data = R(
+    {"jsonrpc": 2.0,
+     "id": "cumainer",
+     "method": "getbestblockhash",
+     "params": [] 
+    }
+    );
+
+const char *submitblock_template = R(
+    {"jsonrpc": 2.0,
+     "id": "cumainer",
+     "method": "submitblock",
+     "params": ["%s"]
+    }
+    );
+
+
 struct best_block_hash {
     char hash[STR_HASH_LEN];
 };
@@ -136,22 +161,6 @@ CURLcode json_rpc(CURL *curl, const char *post_data, char **dest_str) {
     return ret;
 }
 
-const char *blocktemplate_post_data = R(
-    {"jsonrpc": 2.0,
-     "id": "cumainer",
-     "method": "getblocktemplate",
-     "params": [{"rules": ["segwit"]}]
-    }
-    );
-
-const char *bestblock_post_data = R(
-    {"jsonrpc": 2.0,
-     "id": "cumainer",
-     "method": "getbestblockhash",
-     "params": [] 
-    }
-    );
-
 CURLcode get_json(CURL *curl, const char *post, json_t **json) {
     char *json_str = NULL;
     CURLcode ret;
@@ -239,6 +248,33 @@ CURLcode get_block_template(CURL *curl, struct block_header *template) {
     }
 
     return ret;
+}
+
+CURLcode submit_block(CURL *curl, struct block_header *block) {
+    size_t ser_block_size = sizeof *block + 4 + 0;
+    uint8_t *serialized_block = calloc(ser_block_size, sizeof *serialized_block);
+    if (!serialized_block) {
+        err("submit_block: Calloc failed\n");
+        return 1;
+    }
+
+    char *res_str = NULL;
+
+    char *post_data = calloc(ser_block_size, strlen(submitblock_template));
+    /* sprintf(post_data, submitblock_template,  */
+
+    block_pack(block, serialized_block);
+
+    CURLcode ret = 1;
+    
+    json_rpc(curl, post_data, &res_str);
+    if (!res_str) {
+        err("submitblock: Json RPC failed\n");
+        return 1;
+    }
+
+
+    
 }
 
 CURLcode get_best_block_hash(CURL *curl, struct best_block_hash *res) {
@@ -353,7 +389,7 @@ void nbits_to_target(uint32_t nbits, hash_t *target) {
 
     target->byte_hash[31] = 0;
     target->byte_hash[30] = 0;
-    target->byte_hash[29] = 0x00;
+    target->byte_hash[29] = 0xff;
     target->byte_hash[28] = 0xff;
     target->byte_hash[27] = 0xff;
 }

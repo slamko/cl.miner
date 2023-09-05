@@ -351,7 +351,7 @@ void nbits_to_target(uint32_t nbits, hash_t *target) {
     }
     }
 
-    target->byte_hash[31] = 0;
+    /* target->byte_hash[31] = 0; */
 }
 
 int main(void) {

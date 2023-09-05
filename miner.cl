@@ -192,11 +192,15 @@ void sha256(__global __read_only const unsigned char *input,
 
 
 void loc_sha256(__private const unsigned char *input,
-                __private uint *hi,
                 unsigned long len,
                 __private unsigned char *output) {
     uint w[64];
     size_t epochs = (len / 64) + (len % 64 ? 1 : 0);
+
+    uint hi[8] = {
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+	    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+    };
 
     for (size_t epoch = 0; epoch < epochs; epoch++) {
 
@@ -252,33 +256,18 @@ __kernel void mine256(__global unsigned char *block_raw, __global unsigned char 
         // my_raw[(80 - 4) + i] = (cur_nonce >> 8 * (3 - i)) & 0xFF;
     }
 
-    printf("My input: ");
-    for (size_t i = 0; i < 128; i++) {
-        printf("%02x", my_raw[i]);
-    }
-    printf("\n");
-
     __private unsigned char first_out[64] = {0};
     __private unsigned char out[32] = {0};
 
-    __private uint hi[8] = {
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-	    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
-    };
+    loc_sha256(my_raw, 128, first_out);
+    first_out[32] = 0x80;
+    first_out[62] = 0x01; 
 
-    loc_sha256(my_raw, hi, 128, first_out);
-    // first_out[32] = 0x80;
-    // loc_sha256(first_out, hi, 64, out);
-
-    printf("Buf: ");
-    for (size_t i = 0; i < 32; i++) {
-        printf("%x", first_out[i]);
-    }
-    printf("\n");
+    loc_sha256(first_out, 64, out);
 
     for (size_t i = 0; i < 32; i++) {
-        if (target[i] > out[i]) {
-            // printf("Hash: %x > %x\n", target[i] , out[i]);
+        if (target[31 - i] > out[i]) {
+            printf("Hash: %x > %x\n", target[31 - i] , out[i]);
             atomic_xchg(nonce, cur_nonce);
             return;
         }

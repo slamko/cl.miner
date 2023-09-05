@@ -201,7 +201,7 @@ int mine(struct block_header *block, hash_t *target, hash_t *hash) {
     uint32_t big_len = htonl((uint32_t)BLOCK_RAW_LEN << 3);
     memcpy(block_input + sizeof(block_input) - sizeof(big_len), &big_len, sizeof(big_len));
 
-    print_buf("Input", block_input, sizeof block_input);
+    /* print_buf("Input", block_input, sizeof block_input); */
 
     cl_int ret = {0};
 
@@ -265,7 +265,7 @@ int mine(struct block_header *block, hash_t *target, hash_t *hash) {
     double_sha256(block_input, ou, 80);
     print_buf("Proved: ", ou, 32);
 
-    /* printf("Nonce: %d\n", nonce); */
+    printf("Nonce: %d\n", nonce);
 
   cleanup:
     if (kernel) clReleaseKernel(kernel);
@@ -292,8 +292,7 @@ int sha256(const uint8_t *data, uint8_t *out, size_t len) {
     uint32_t big_len = htonl((uint32_t)len << 3);
     memcpy((char *)(input + al_inp_size - sizeof(big_len)), &big_len, sizeof(big_len));
 
-    print_buf("Input", input, al_inp_size);
-    printf("Inp: %zu\n", len);
+    /* print_buf("Input", input, al_inp_size); */
 
     cl_int ret = {0};
 

@@ -35,7 +35,30 @@
 #define err(str) fprintf(stderr, str);
 #define error(str, ...) fprintf(stderr, str, __VA_ARGS__);
 
+#include <stddef.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+static inline void *cmalloc(size_t size) {
+    void *ptr = malloc(size);                                             
+    if (!ptr) { 
+        err("Out of memory. Malloc failed\n");
+        exit(-1); 
+    } 
+    return ptr;
+}
+
+static inline void *ccalloc(size_t nmemb, size_t size) {
+    void *ptr = calloc(nmemb, size);                                             
+    if (!ptr) { 
+        err("Out of memory. Calloc failed\n");
+      exit(-1); 
+    } 
+    return ptr;
+}
+
 #include <stdint.h>
+#include <stddef.h>
 
 struct block_header {
     int32_t version;
@@ -51,6 +74,16 @@ typedef union hash {
     uint32_t uint_hash[8];
 } hash_t;
 
+typedef struct transaction_list {
+    char *raw_data;
+    hash_t *txid_list;
+    size_t len;
+} transaction_list_t;
+
+struct submit_block {
+    struct block_header header;
+    transaction_list_t tx_list;
+};
 
 void block_pack(const struct block_header *block, uint8_t raw[BLOCK_RAW_LEN]);
 

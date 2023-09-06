@@ -37,54 +37,58 @@ struct best_block_hash {
     char hash[STR_HASH_LEN];
 };
 
-struct transaction {
-    hash_t txid;
-    hash_t hash;
-};
-
-typedef struct transaction_list {
-    struct transaction *tlist;
-    size_t len;
-} transaction_list_t;
-
-void build_merkle_root(struct transaction *tlist, size_t len, hash_t *merkle_root) {
-    struct transaction *merkle_tree = malloc(len * sizeof *merkle_tree);
-    memcpy(merkle_tree, tlist, len * sizeof *merkle_tree);
+void build_merkle_root(transaction_list_t *tlist, size_t len, hash_t *merkle_root) {
+    hash_t *merkle_tree = cmalloc(len * sizeof *merkle_tree);
+    memcpy(merkle_tree, tlist->txid_list, len * sizeof *merkle_tree);
     
     size_t mod = 2;
     for (size_t i = 0; i < len; i += mod) {
         uint8_t concat_hash[64];
-        memcpy(concat_hash, merkle_tree[i].txid.byte_hash, sizeof(merkle_tree[i].txid.byte_hash));
-        memcpy(concat_hash + sizeof (concat_hash) / 2, merkle_tree[i + 1].txid.byte_hash, sizeof(merkle_tree[i + 1].txid.byte_hash));
+        memcpy(concat_hash, merkle_tree[i].byte_hash, sizeof(merkle_tree[i].byte_hash));
+        memcpy(concat_hash + sizeof (concat_hash) / 2, merkle_tree[i + 1].byte_hash, sizeof(merkle_tree[i + 1].byte_hash));
 
-        double_sha256(concat_hash, merkle_tree[i].txid.byte_hash, sizeof concat_hash);
+        double_sha256(concat_hash, merkle_tree[i].byte_hash, sizeof concat_hash);
         
         mod *= 2;
     }
 
-    memcpy(merkle_root, &merkle_tree[0].txid, sizeof *merkle_root);
+    memcpy(merkle_root, &merkle_tree[0], sizeof *merkle_root);
     free(merkle_tree);
 }
 
 int build_transaction_list(json_t *t_arr, transaction_list_t *tlist) {
     int ret = 0;
     size_t t_len = json_array_size(t_arr);
+
     if (!t_len) {
         err("Invalid transaction list\n");
         return 1;
     }
     
-    tlist->tlist = calloc(t_len, sizeof *tlist->tlist);
+    tlist->txid_list = ccalloc(t_len, sizeof(*tlist->txid_list));
     tlist->len = t_len;
+
+    size_t tdata_size = 0;
+    size_t cur_data_off = 0;
 
     for (size_t i = 0; i < t_len; i++) {
         json_t *transaction = json_array_get(t_arr, i);
-        struct transaction *cur_t = &tlist->tlist[i];
+        hash_t *cur_hash = &tlist->txid_list[i];
+        char *data;
 
         char *txid = NULL, *hash = NULL;
-        if ((ret = json_unpack(transaction, "{s:s, s:s}", "txid", &txid, "hash", &hash))) {
+        if ((ret = json_unpack(transaction, "{s:s, s:s, s:s}",
+                               "data", &data,
+                               "txid", &txid,
+                               "hash", &hash))) {
+
             err("Invalid transaction in a list\n");
             ret_code(ret);
+        }
+
+        if (!data) {
+            err("No transaction data\n");
+            ret_code(1);
         }
 
         if (!txid || !hash) {
@@ -97,8 +101,29 @@ int build_transaction_list(json_t *t_arr, transaction_list_t *tlist) {
             ret_code(1);
         }
 
-        memcpy(&cur_t->txid.byte_hash, txid, sizeof cur_t->txid.byte_hash);
-        memcpy(&cur_t->hash.byte_hash, hash, sizeof cur_t->hash.byte_hash);
+        size_t data_len = strlen(data);
+        if (!tlist->raw_data) {
+            tdata_size = data_len * 2;
+            tlist->raw_data = ccalloc(t_len, tdata_size);
+        }
+
+        if (cur_data_off + data_len >= tdata_size) {
+            tdata_size *= 2;
+            void *new_data_list = realloc(tlist->raw_data, tdata_size);
+            if (!new_data_list) {
+                err("build tx list: Realloc out of memory\n");
+                exit(-1);
+            }
+
+            memcpy(new_data_list, tlist->raw_data, cur_data_off);
+            free(tlist->raw_data);
+
+            tlist->raw_data = new_data_list;
+        }
+
+        memcpy(tlist->raw_data + cur_data_off, data, data_len);
+        memcpy(&cur_hash->byte_hash, txid, sizeof cur_hash->byte_hash);
+        cur_data_off += data_len;
 
   cleanup:
         free(txid);
@@ -127,7 +152,7 @@ void block_pack(const struct block_header *block, uint8_t raw[BLOCK_RAW_LEN]) {
 
 size_t write_callback(char *ptr, size_t size, size_t nmemb, void *dest) {
     char **dest_ptr = dest;
-    *dest_ptr = malloc(size * nmemb + 1);
+    *dest_ptr = cmalloc(size * nmemb + 1);
     strcpy(*dest_ptr, ptr);
     
     return nmemb;
@@ -185,12 +210,14 @@ CURLcode get_json(CURL *curl, const char *post, json_t **json) {
     return ret;
 }
 
-CURLcode get_block_template(CURL *curl, struct block_header *template) {
+CURLcode get_block_template(CURL *curl, struct submit_block *template) {
     CURLcode ret = 1;
     json_t *json = NULL;
     json_t *result = NULL;
     char *nbits = NULL;
     json_t *transactions = NULL;
+
+    struct block_header *header = &template->header;
 
     if (get_json(curl, blocktemplate_post_data, &json)) {
         err("Json rpc failed\n");
@@ -206,10 +233,10 @@ CURLcode get_block_template(CURL *curl, struct block_header *template) {
     
     if ((ret = json_unpack(result,
                            "{s:i, s:s, s:o, s:i, s:s}",
-                           "version", &template->version,
-                           "previousblockhash", &template->prev_hash,
+                           "version", &header->version,
+                           "previousblockhash", &header->prev_hash,
                            "transactions", &transactions,
-                           "curtime", &template->time,
+                           "curtime", &header->time,
                            "bits", &nbits))) {
 
         err("Unknown bitcoind response format\n");
@@ -221,22 +248,22 @@ CURLcode get_block_template(CURL *curl, struct block_header *template) {
         ret_code(1);
     }
 
-    template->target = strtoul(nbits, NULL, 16);
-    printf("Nbits: %x\n", template->target);
+    header->target = strtoul(nbits, NULL, 16);
+    printf("Nbits: %x\n", header->target);
 
-    transaction_list_t tlist = {0};
+    transaction_list_t *tx_list = &template->tx_list;
     hash_t merkle_root = {0};
 
-    ret = build_transaction_list(transactions, &tlist);
+    ret = build_transaction_list(transactions, tx_list);
     if (ret) {
-        memset(template->merkle_root_hash, 0, sizeof template->merkle_root_hash);
+        memset(header->merkle_root_hash, 0, sizeof header->merkle_root_hash);
         err("Aborting merkle root hash calculation\n");
         ret_code(ret);
     }
     
-    build_merkle_root(tlist.tlist, tlist.len, &merkle_root);
+    build_merkle_root(tx_list, tx_list->len, &merkle_root);
 
-    memcpy(template->merkle_root_hash, merkle_root.byte_hash, sizeof template->merkle_root_hash);
+    memcpy(header->merkle_root_hash, merkle_root.byte_hash, sizeof header->merkle_root_hash);
 
   cleanup:
     if (json) {
@@ -252,15 +279,10 @@ CURLcode get_block_template(CURL *curl, struct block_header *template) {
 
 CURLcode submit_block(CURL *curl, struct block_header *block) {
     size_t ser_block_size = sizeof *block + 4 + 0;
-    uint8_t *serialized_block = calloc(ser_block_size, sizeof *serialized_block);
-    if (!serialized_block) {
-        err("submit_block: Calloc failed\n");
-        return 1;
-    }
-
+    uint8_t *serialized_block = ccalloc(ser_block_size, sizeof *serialized_block);
     char *res_str = NULL;
 
-    char *post_data = calloc(ser_block_size, strlen(submitblock_template));
+    char *post_data = ccalloc(ser_block_size, strlen(submitblock_template));
     /* sprintf(post_data, submitblock_template,  */
 
     block_pack(block, serialized_block);

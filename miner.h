@@ -16,7 +16,9 @@
 
 #define ARR_LEN(x) (sizeof(x) / sizeof(*(x)))
 #define align(x, al) (size_t)((((x) / (al)) * (al)) + (((x) % (al)) ? (al) : 0))
-#define align_down(x, al) (size_t) (((x) / (al)) * (al)) 
+#define align_down(x, al) (size_t) (((x) / (al)) * (al))
+
+#define for_range(name, start, end) for (size_t name = start; name < end; name++)
 
 #define BLOCK_RAW_LEN 80
 
@@ -62,8 +64,8 @@ static inline void *ccalloc(size_t nmemb, size_t size) {
 
 struct block_header {
     int32_t version;
-    char prev_hash[32];
-    char merkle_root_hash[32];
+    uint8_t prev_hash[32];
+    uint8_t merkle_root_hash[32];
     uint32_t time;
     uint32_t target;
     uint32_t nonce;

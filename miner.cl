@@ -269,7 +269,7 @@ __kernel void mine256(__global unsigned char *block_raw, __global unsigned char 
 
     loc_sha256(first_out, 64, out);
 
-    printf("Hash: %u : %lu : %x\n", get_global_id(0), cur_nonce, out[0]);
+    // printf("Hash: %u : %lu : %x\n", get_global_id(0), cur_nonce, out[0]);
 
     for (size_t i = 0; i < 32; i++) {
         if (target[31 - i] > out[i]) {

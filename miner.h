@@ -78,6 +78,7 @@ typedef struct transaction_list {
     char *raw_data;
     hash_t *txid_list;
     size_t len;
+    size_t data_size;
 } transaction_list_t;
 
 struct submit_block {

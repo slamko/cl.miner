@@ -132,6 +132,8 @@ int build_transaction_list(json_t *t_arr, transaction_list_t *tlist) {
         break;
     }
 
+    tlist->data_size = cur_data_off;
+    
     if (ret) {
         free(tlist);
         err("Aborting transaction list creation\n");
@@ -277,26 +279,29 @@ CURLcode get_block_template(CURL *curl, struct submit_block *template) {
     return ret;
 }
 
-CURLcode submit_block(CURL *curl, struct block_header *block) {
-    size_t ser_block_size = sizeof *block + 4 + 0;
+CURLcode submit_block(CURL *curl, struct submit_block *block) {
+    size_t ser_block_size = sizeof (block->header) + 4 + block->tx_list.data_size;
     uint8_t *serialized_block = ccalloc(ser_block_size, sizeof *serialized_block);
     char *res_str = NULL;
+    CURLcode ret = 0;
 
-    char *post_data = ccalloc(ser_block_size, strlen(submitblock_template));
-    /* sprintf(post_data, submitblock_template,  */
+    char *post_data = ccalloc(ser_block_size * strlen(submitblock_template), sizeof *post_data);
+    sprintf(post_data, submitblock_template, block->tx_list.raw_data);
 
-    block_pack(block, serialized_block);
+    block_pack(&block->header, serialized_block);
 
-    CURLcode ret = 1;
-    
-    json_rpc(curl, post_data, &res_str);
+    ret = json_rpc(curl, post_data, &res_str);
     if (!res_str) {
         err("submitblock: Json RPC failed\n");
-        return 1;
+        ret_code(ret);
     }
 
-
+    puts("\nSubmitblock: \n");
+    puts(res_str);
     
+  cleanup:
+    free(post_data);
+    return ret;
 }
 
 CURLcode get_best_block_hash(CURL *curl, struct best_block_hash *res) {
@@ -448,16 +453,16 @@ int main(void) {
         exit(ret);
     }
 
-    struct block_header header;
+    struct submit_block header = {0};
     get_block_template(curl, &header);
 
     hash_t target = {0};
-    nbits_to_target(header.target, &target);
+    nbits_to_target(header.header.target, &target);
     hash_print("Target: ", &target);
     ocl_version();
 
     hash_t mined_hash;
-    if (mine(&header, &target, &mined_hash)) {
+    if (mine(&header.header, &target, &mined_hash)) {
         err("Block mining failed: \n");
     }
    

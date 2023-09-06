@@ -93,26 +93,70 @@ void build_merkle_root(transaction_list_t *tlist, size_t len, hash_t *merkle_roo
     free(merkle_tree);
 }
 
+struct tx_in {
+    uint32_t *hash;
+    
+} __attribute__((packed));
+
+union compact_size {
+    uint32_t val32;
+    uint16_t val16;
+    uint8_t val8;
+};
+
+struct raw_transaction {
+    int32_t version;
+    union compact_size tx_in_cnt;
+    struct tx_in *tx_ins;
+    union compact_size tx_out_cnt;
+    struct tx_out *tx_outs;
+    uint32_t lock_time;
+
+} __attribute__ ((packed));
+
+void write_coinbase(uint32_t time, uint8_t *buf) {
+    size_t coinbase_size = 64;
+    
+    memset(buf, 0, coinbase_size);
+
+    buf[0] = 0x1;
+    buf[4] = 0x1;
+    memset(buf + 37, 0xFF, 4);
+    buf[45] = 0x01;
+    buf[49] = 0x00;
+    buf[53] = 0x0;
+    memcpy(buf + 57, &time, sizeof time);
+}
+
 int build_transaction_list(json_t *t_arr, transaction_list_t *tlist) {
     int ret = 0;
     size_t t_len = json_array_size(t_arr);
+    size_t tdata_size = 0;
+    size_t cur_data_off = 0;
 
     if (!t_len) {
-        tlist->raw_data = malloc(2);
-        tlist->raw_data[0] = 0;
-        err("Invalid transaction list\n");
-        return 1;
+        uint8_t coinbase_data[64] = {0};
+        tlist->txid_list = ccalloc(1, sizeof (*tlist->txid_list));
+
+        tlist->raw_data = ccalloc(sizeof coinbase_data * 2 + 1, sizeof (*tlist->raw_data));
+        write_coinbase(time(NULL), coinbase_data);
+        hex_to_string(coinbase_data, tlist->raw_data, sizeof coinbase_data);
+        printf("Row data: %s\n", tlist->raw_data);
+
+        double_sha256(coinbase_data, tlist->txid_list->byte_hash, sizeof coinbase_data);
+        tlist->len = 1;
+        tlist->data_size = strlen(tlist->raw_data);
+
+        err("Empty transaction list\n");
+        return 0;
     }
     
     tlist->txid_list = ccalloc(t_len, sizeof(*tlist->txid_list));
     tlist->len = t_len;
 
-    size_t tdata_size = 0;
-    size_t cur_data_off = 0;
-
     for (size_t i = 0; i < t_len; i++) {
         json_t *transaction = json_array_get(t_arr, i);
-        hash_t *cur_hash = &tlist->txid_list[i];
+        hash_t *cur_hash = &tlist->txid_list[i + 1];
         char *data;
 
         char *txid = NULL, *hash = NULL;
@@ -149,6 +193,7 @@ int build_transaction_list(json_t *t_arr, transaction_list_t *tlist) {
         if (cur_data_off + data_len >= tdata_size) {
             tdata_size *= 2;
             void *new_data_list = realloc(tlist->raw_data, tdata_size);
+
             if (!new_data_list) {
                 err("build tx list: Realloc out of memory\n");
                 exit(-1);
@@ -351,7 +396,7 @@ CURLcode submit_block(CURL *curl, struct submit_block *block) {
 
     char *res_str = NULL;
     CURLcode ret = 0;
-    char *post_data = ccalloc(ser_block_size + strlen(submitblock_template), sizeof *post_data);
+    char *post_data = ccalloc(ser_block_size + strlen(submitblock_template) + 1, sizeof *post_data);
     char header_str[sizeof(serialized_block) * 2 + 1] = {0};
 
     block_pack(&block->header, serialized_block);
@@ -487,9 +532,9 @@ void nbits_to_target(uint32_t nbits, hash_t *target) {
     }
 
     target->byte_hash[31] = 0;
-    /*
     target->byte_hash[30] = 0;
     target->byte_hash[29] = 0xff;
+    /*
     target->byte_hash[28] = 0xff;
     target->byte_hash[27] = 0xff;
     */
@@ -539,6 +584,12 @@ int main(void) {
     if (mine(&submit.header, &target, &mined_hash)) {
         err("Block mining failed: \n");
     }
+    uint8_t new_bin[80] = {0};
+    block_pack(&submit.header, new_bin);
+
+    uint8_t ou[32];
+    double_sha256(new_bin, ou, 80);
+    print_buf("Proved: ", ou, 32);
 
     submit_block(curl, &submit);
    

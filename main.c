@@ -45,13 +45,13 @@ static inline char hex_to_char(uint8_t h) {
 }
 
 static inline uint8_t char_to_hex(char c) {
-    if (c > 97) {
-        return (c - 97) & 0x0F;
+    if (c >= 97) {
+        return ((c - 97) + 10) & 0x0F;
     } 
     return (c - 48) & 0x0F;
 }
 
-void hex_to_string(uint8_t *hash, char *str, size_t len) {
+void hex_to_string(const uint8_t *hash, char *str, size_t len) {
     for_range(i, 0, len) {
         uint8_t h = hash[i] >> 4;
         uint8_t l = hash[i] & 0x0F;
@@ -61,9 +61,9 @@ void hex_to_string(uint8_t *hash, char *str, size_t len) {
     }
 }
 
-void string_to_hex(char *str, uint8_t *hash, size_t len) {
+void string_to_hex(const char *str, uint8_t *hash, size_t len) {
     for_range(i, 0, len / 2) {
-        hash[i] = (char_to_hex(str[i]) << 4) & char_to_hex (str[i + 1]); 
+        hash[i] = (char_to_hex(str[i * 2]) << 4) | char_to_hex (str[(i * 2) + 1]); 
     }
 }
 
@@ -195,19 +195,24 @@ void block_pack(const struct block_header *block, uint8_t raw[BLOCK_RAW_LEN]) {
     memcpy(raw + 76, &block->nonce, sizeof block->nonce);
 }
 
-void block_serialize(const struct block_header *block, char raw[sizeof (struct block_header) + 64]) {
+void block_serialize(const struct block_header *block, char raw[BLOCK_RAW_LEN + 64]) {
     int32_t big_version = ntohl(block->version);
     memcpy(raw, &big_version, sizeof block->version);
 
-    /* char prev_hash_str[64] = {0}; */
-    /* hex_to_string(block->prev_hash, prev_hash_str,  */
-    memcpy(raw + 4, &block->prev_hash, sizeof block->prev_hash);
-    memcpy(raw + 36, &block->merkle_root_hash, sizeof block->merkle_root_hash);
+    char prev_hash_str[64] = {0};
+    hex_to_string(block->prev_hash, prev_hash_str, sizeof block->prev_hash);
+
+    memcpy(raw + 4, prev_hash_str, sizeof block->prev_hash);
+
+    char merkle_root_str[64] = {0};
+    hex_to_string(block->merkle_root_hash, merkle_root_str, sizeof block->merkle_root_hash);
+
+    memcpy(raw + 68, merkle_root_str, sizeof block->merkle_root_hash);
 
     uint32_t big_target = htonl(block->target);
-    memcpy(raw + 68, &big_target, sizeof block->target);
-    memcpy(raw + 72, &block->time, sizeof block->time);
-    memcpy(raw + 76, &block->nonce, sizeof block->nonce);
+    memcpy(raw + 132, &big_target, sizeof block->target);
+    memcpy(raw + 136, &block->time, sizeof block->time);
+    memcpy(raw + 140, &block->nonce, sizeof block->nonce);
 }
 
 size_t write_callback(char *ptr, size_t size, size_t nmemb, void *dest) {
@@ -272,9 +277,8 @@ CURLcode get_json(CURL *curl, const char *post, json_t **json) {
 
 CURLcode get_block_template(CURL *curl, struct submit_block *template) {
     CURLcode ret = 1;
-    json_t *json = NULL;
-    json_t *result = NULL;
-    char *nbits = NULL;
+    json_t *json = NULL, *result = NULL;
+    char *nbits = NULL, *prev_hash = NULL;
     json_t *transactions = NULL;
 
     struct block_header *header = &template->header;
@@ -294,7 +298,7 @@ CURLcode get_block_template(CURL *curl, struct submit_block *template) {
     if ((ret = json_unpack(result,
                            "{s:i, s:s, s:o, s:i, s:s}",
                            "version", &header->version,
-                           "previousblockhash", &header->prev_hash,
+                           "previousblockhash", &prev_hash,
                            "transactions", &transactions,
                            "curtime", &header->time,
                            "bits", &nbits))) {
@@ -303,11 +307,15 @@ CURLcode get_block_template(CURL *curl, struct submit_block *template) {
         ret_code(ret);
     }
 
-    if (!transactions || !nbits) {
+    if (!transactions || !nbits || !prev_hash) {
         err("Json decoding failed\n");
         ret_code(1);
     }
 
+    string_to_hex(prev_hash, header->prev_hash, 64);
+    /* printf("PrevL %s\n", prev_hash); */
+    print_buf("Prev: ", header->prev_hash, 32);
+    
     header->target = strtoul(nbits, NULL, 16);
     printf("Nbits: %x\n", header->target);
 
@@ -344,8 +352,8 @@ CURLcode submit_block(CURL *curl, struct submit_block *block) {
     char *res_str = NULL;
     CURLcode ret = 0;
     char *post_data = ccalloc(ser_block_size + strlen(submitblock_template), sizeof *post_data);
+    char header_str[sizeof(serialized_block) * 2 + 1] = {0};
 
-    char header_str[sizeof (serialized_block) * 2 + 2] = {0};
     block_pack(&block->header, serialized_block);
     hex_to_string(serialized_block, header_str, sizeof serialized_block);
 
@@ -479,10 +487,12 @@ void nbits_to_target(uint32_t nbits, hash_t *target) {
     }
 
     target->byte_hash[31] = 0;
+    /*
     target->byte_hash[30] = 0;
     target->byte_hash[29] = 0xff;
     target->byte_hash[28] = 0xff;
     target->byte_hash[27] = 0xff;
+    */
 }
 
 int main(void) {

@@ -115,7 +115,7 @@ struct raw_transaction {
 } __attribute__ ((packed));
 
 void write_coinbase(uint32_t time, uint8_t *buf) {
-    size_t coinbase_size = 64;
+    size_t coinbase_size = 70;
     
     memset(buf, 0, coinbase_size);
 
@@ -124,8 +124,20 @@ void write_coinbase(uint32_t time, uint8_t *buf) {
     memset(buf + 37, 0xFF, 4);
     buf[45] = 0x01;
     buf[49] = 0x00;
-    buf[53] = 0x0;
-    memcpy(buf + 57, &time, sizeof time);
+    buf[53] = 0x01;
+    memcpy(buf + 66, &time, sizeof time);
+}
+
+size_t build_coinbase(transaction_list_t *tlist) {
+    uint8_t coinbase_data[70] = {0};
+    
+    tlist->raw_data = ccalloc(sizeof coinbase_data * 2 + 1, sizeof (*tlist->raw_data));
+    write_coinbase(time(NULL), coinbase_data);
+    hex_to_string(coinbase_data, tlist->raw_data, sizeof coinbase_data);
+    
+    double_sha256(coinbase_data, tlist->txid_list->byte_hash, sizeof coinbase_data);
+
+    return strlen(tlist->raw_data);
 }
 
 int build_transaction_list(json_t *t_arr, transaction_list_t *tlist) {
@@ -135,17 +147,9 @@ int build_transaction_list(json_t *t_arr, transaction_list_t *tlist) {
     size_t cur_data_off = 0;
 
     if (!t_len) {
-        uint8_t coinbase_data[64] = {0};
         tlist->txid_list = ccalloc(1, sizeof (*tlist->txid_list));
-
-        tlist->raw_data = ccalloc(sizeof coinbase_data * 2 + 1, sizeof (*tlist->raw_data));
-        write_coinbase(time(NULL), coinbase_data);
-        hex_to_string(coinbase_data, tlist->raw_data, sizeof coinbase_data);
-        printf("Row data: %s\n", tlist->raw_data);
-
-        double_sha256(coinbase_data, tlist->txid_list->byte_hash, sizeof coinbase_data);
+        tlist->data_size = build_coinbase(tlist);
         tlist->len = 1;
-        tlist->data_size = strlen(tlist->raw_data);
 
         err("Empty transaction list\n");
         return 0;
@@ -188,6 +192,8 @@ int build_transaction_list(json_t *t_arr, transaction_list_t *tlist) {
         if (!tlist->raw_data) {
             tdata_size = data_len * 2;
             tlist->raw_data = ccalloc(t_len, tdata_size);
+
+            cur_data_off += build_coinbase(tlist);
         }
 
         if (cur_data_off + data_len >= tdata_size) {
@@ -228,13 +234,14 @@ int build_transaction_list(json_t *t_arr, transaction_list_t *tlist) {
 }
 
 void block_pack(const struct block_header *block, uint8_t raw[BLOCK_RAW_LEN]) {
-    int32_t big_version = ntohl(block->version);
+    int32_t big_version = block->version;
     memcpy(raw, &big_version, sizeof block->version);
 
     memcpy(raw + 4, &block->prev_hash, sizeof block->prev_hash);
     memcpy(raw + 36, &block->merkle_root_hash, sizeof block->merkle_root_hash);
 
-    uint32_t big_target = htonl(block->target);
+    /* uint32_t big_target = htonl(block->target); /\*  *\/ */
+    uint32_t big_target = block->target;
     memcpy(raw + 68, &big_target, sizeof block->target);
     memcpy(raw + 72, &block->time, sizeof block->time);
     memcpy(raw + 76, &block->nonce, sizeof block->nonce);
@@ -564,16 +571,11 @@ int main(void) {
     uint8_t raw[80];
     block_pack(&block, raw);
 
-    /* uint8_t out[STR_HASH_LEN] = {0}; */
-    /* ret = sha256(raw, out, sizeof raw); */
-
-    if (ret) {
-        printf("Error occured: %d\n", ret);
-        exit(ret);
-    }
-
     struct submit_block submit = {0};
-    get_block_template(curl, &submit);
+    if (get_block_template(curl, &submit)) {
+        err("Get block template failed\n");
+        ret_code(1);
+    }
 
     hash_t target = {0};
     nbits_to_target(submit.header.target, &target);
@@ -583,7 +585,9 @@ int main(void) {
     hash_t mined_hash;
     if (mine(&submit.header, &target, &mined_hash)) {
         err("Block mining failed: \n");
+        ret_code(1);
     }
+
     uint8_t new_bin[80] = {0};
     block_pack(&submit.header, new_bin);
 
@@ -591,8 +595,12 @@ int main(void) {
     double_sha256(new_bin, ou, 80);
     print_buf("Proved: ", ou, 32);
 
-    submit_block(curl, &submit);
+    if (submit_block(curl, &submit)) {
+        err("Block submit failed\n");
+        ret_code(1);
+    }
    
+  cleanup:
     curl_easy_cleanup(curl);
     ocl_free();
 }

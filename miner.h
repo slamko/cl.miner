@@ -40,6 +40,9 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
+
+void hton_hex(uint8_t *nhash, const uint8_t *hhash, size_t len);
 
 static inline void *cmalloc(size_t size) {
     void *ptr = malloc(size);                                             

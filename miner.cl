@@ -55,6 +55,13 @@ void memcpyui(__global unsigned char *dest, uint *src, size_t len) {
     }
 }
 
+void memset_priv(__private uint *dest, uint val, size_t len) {
+
+    for (size_t i = 0; i < len; i++) {
+        dest[i] = val;
+    }
+}
+
 void memcpy_priv(__private unsigned char *dest, __private uint *src, size_t len) {
 
     for (size_t i = 0; i < len; i++) {
@@ -193,7 +200,7 @@ void sha256(__global __read_only const unsigned char *input,
 
 void loc_sha256(__private const unsigned char *input,
                 unsigned long len,
-                __private unsigned char *output) {
+                __private uint *output) {
     uint w[64];
     size_t epochs = (len / 64) + (len % 64 ? 1 : 0);
 
@@ -242,16 +249,18 @@ void loc_sha256(__private const unsigned char *input,
 
     }
 
-    memcpy_priv(output, hi, 8);
+    for (size_t i = 0; i < 8; i++) {
+        output[i] = hi[i];
+    }
 }
 
-__kernel void mine256(__global unsigned char *block_raw, __global unsigned char *target,
+__kernel void mine256(__global unsigned char *block_raw, __global uint *target,
                       __global __read_write uint *nonce) {
     if (*nonce > 0) {
         return;
     }
     
-    size_t cur_nonce = get_global_id(0);
+    uint cur_nonce = get_global_id(0);
     
     __private unsigned char my_raw[128] = {0};
     memcpy_char(my_raw, block_raw, 128);
@@ -262,23 +271,33 @@ __kernel void mine256(__global unsigned char *block_raw, __global unsigned char 
 
     __private unsigned char first_out[64] = {0};
     __private unsigned char out[32] = {0};
+    __private uint hi[8] = {0};
+    
+    loc_sha256(my_raw, 128, hi);
+    memcpy_priv(first_out, hi, 8);
 
-    loc_sha256(my_raw, 128, first_out);
     first_out[32] = 0x80;
     first_out[62] = 0x01; 
 
-    loc_sha256(first_out, 64, out);
+    memset_priv(hi, 0, sizeof hi);
+    loc_sha256(first_out, 64, hi);
 
     // printf("Hash: %u : %lu : %x\n", get_global_id(0), cur_nonce, out[0]);
 
-    for (size_t i = 0; i < 32; i++) {
-        if (target[31 - i] > out[i]) {
-            printf("Hash: %x > %x\n", target[31 - i] , out[i]);
+    for (size_t i = 7; i >= 0; i--) {
+        uint big_hi =
+            ((hi[i] & 0xFF) << 24) |
+            ((hi[i] & 0xFF00) << 8) |
+            ((hi[i] & 0xFF0000) >> 16) |
+            ((hi[i] & 0xFF000000) >> 24);
+                
+        if (target[i] > big_hi) {
+            printf("Hash: %x > %x. Nonce: %u\n", target[i] , big_hi, cur_nonce);
             atomic_xchg(nonce, cur_nonce);
             return;
         }
 
-        if (out[i] > target[i]) {
+        if (hi[i] > target[i]) {
             return;
         }
     }

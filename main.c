@@ -1,5 +1,6 @@
 #include "miner.h"
 #include <curl/curl.h>
+#include <stddef.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,6 +52,18 @@ static inline uint8_t char_to_hex(char c) {
     return (c - 48) & 0x0F;
 }
 
+void hton_hex(uint8_t *nhash, const uint8_t *hhash, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        nhash[len - i - 1] = hhash[i];
+    }
+}
+
+void ntoh_hex(uint8_t *hhash, const uint8_t *nhash, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        hhash[len - i - 1] = nhash[i];
+    }
+}
+
 void hex_to_string(const uint8_t *hash, char *str, size_t len) {
     for_range(i, 0, len) {
         uint8_t h = hash[i] >> 4;
@@ -67,10 +80,27 @@ void string_to_hex(const char *str, uint8_t *hash, size_t len) {
     }
 }
 
-void build_merkle_root(transaction_list_t *tlist, size_t len, hash_t *merkle_root) {
-    hash_t *merkle_tree = cmalloc(len * sizeof *merkle_tree);
-    memcpy(merkle_tree, tlist->txid_list, len * sizeof *merkle_tree);
+int build_merkle_root(transaction_list_t *tlist, size_t len, hash_t *merkle_root) {
+    hash_t *merkle_tree = NULL;
+
+    if (!len) {
+        err("merkle root: Invalid block\n");
+        return 1;
+    }
     
+    if (len == 1) {
+        printf("merkle_root: Only coinbase transaction present\n");
+        uint8_t mrkl[32] =
+            {0x72, 0x95, 0xc5, 0xb4, 0x43, 0xcd, 0x2a, 0x9e, 0x8d, 0x53,
+             0xa3, 0x3d, 0x7f, 0x19, 0xaf, 0xa7, 0x2, 0x1, 0x43, 0x78, 0x11, 0x5a, 0xf7, 0x37, 0xef, 0x49, 0x56, 0x60, 0xba, 0xd6, 0x50,
+             0x78};
+        memcpy(merkle_root->byte_hash, &tlist->txid_list[0], sizeof (merkle_root->byte_hash));
+        return 0;
+    }
+    
+    merkle_tree = cmalloc(len * sizeof *merkle_tree);
+    memcpy(merkle_tree, tlist->txid_list, len * sizeof *merkle_tree);
+
     size_t mod = 2;
     for (size_t i = 0; i < len; i += mod) {
         uint8_t concat_hash[64];
@@ -91,6 +121,7 @@ void build_merkle_root(transaction_list_t *tlist, size_t len, hash_t *merkle_roo
 
     memcpy(merkle_root, &merkle_tree[0], sizeof *merkle_root);
     free(merkle_tree);
+    return 0;
 }
 
 struct tx_in {
@@ -122,10 +153,12 @@ void write_coinbase(uint32_t time, uint8_t *buf) {
     buf[0] = 0x1;
     buf[4] = 0x1;
     memset(buf + 37, 0xFF, 4);
-    buf[45] = 0x01;
-    buf[49] = 0x00;
-    buf[53] = 0x01;
-    memcpy(buf + 66, &time, sizeof time);
+    buf[41] = 0x03;
+    buf[42] = 0x01;
+    
+    memset(buf + 45, 0xFF, 4);
+    buf[49] = 0x01;
+    memset(buf + 58, 0x00, sizeof time);
 }
 
 size_t build_coinbase(transaction_list_t *tlist) {
@@ -233,38 +266,45 @@ int build_transaction_list(json_t *t_arr, transaction_list_t *tlist) {
     return ret;
 }
 
+void memcpy_be(void *dest, const void *src, size_t len) {
+    char *dest_buf = dest;
+    const char *src_buf = src;
+    
+    for (size_t i = 0; i < len; i++) {
+        dest_buf[len - i - 1] = src_buf[i];
+    }
+}
+
 void block_pack(const struct block_header *block, uint8_t raw[BLOCK_RAW_LEN]) {
     int32_t big_version = block->version;
     memcpy(raw, &big_version, sizeof block->version);
 
-    memcpy(raw + 4, &block->prev_hash, sizeof block->prev_hash);
-    memcpy(raw + 36, &block->merkle_root_hash, sizeof block->merkle_root_hash);
+    memcpy_be(raw + 4, &block->prev_hash, sizeof block->prev_hash);
+    memcpy_be(raw + 36, &block->merkle_root_hash, sizeof block->merkle_root_hash);
 
-    /* uint32_t big_target = htonl(block->target); /\*  *\/ */
+    uint32_t big_time = block->time;
+    memcpy(raw + 68, &big_time, sizeof block->time);
     uint32_t big_target = block->target;
-    memcpy(raw + 68, &big_target, sizeof block->target);
-    memcpy(raw + 72, &block->time, sizeof block->time);
-    memcpy(raw + 76, &block->nonce, sizeof block->nonce);
+    memcpy(raw + 72, &big_target, sizeof block->target);
+    uint32_t big_nonce = block->nonce;
+    memcpy(raw + 76, &big_nonce, sizeof block->nonce);
 }
 
-void block_serialize(const struct block_header *block, char raw[BLOCK_RAW_LEN + 64]) {
-    int32_t big_version = ntohl(block->version);
+void block_serialize(const struct block_header *block, uint8_t raw[BLOCK_RAW_LEN]) {
+
+    int32_t big_version = block->version;
     memcpy(raw, &big_version, sizeof block->version);
 
-    char prev_hash_str[64] = {0};
-    hex_to_string(block->prev_hash, prev_hash_str, sizeof block->prev_hash);
+    memcpy_be(raw + 4, &block->prev_hash, sizeof block->prev_hash);
+    memcpy_be(raw + 36, &block->merkle_root_hash, sizeof block->merkle_root_hash);
 
-    memcpy(raw + 4, prev_hash_str, sizeof block->prev_hash);
+    memcpy(raw + 68, &block->time, sizeof block->time);
 
-    char merkle_root_str[64] = {0};
-    hex_to_string(block->merkle_root_hash, merkle_root_str, sizeof block->merkle_root_hash);
+    uint32_t big_target = block->target;
+    memcpy(raw + 72, &big_target, sizeof block->target);
 
-    memcpy(raw + 68, merkle_root_str, sizeof block->merkle_root_hash);
-
-    uint32_t big_target = htonl(block->target);
-    memcpy(raw + 132, &big_target, sizeof block->target);
-    memcpy(raw + 136, &block->time, sizeof block->time);
-    memcpy(raw + 140, &block->nonce, sizeof block->nonce);
+    uint32_t big_nonce = block->nonce;
+    memcpy(raw + 76, &big_nonce, sizeof block->nonce);
 }
 
 size_t write_callback(char *ptr, size_t size, size_t nmemb, void *dest) {
@@ -359,6 +399,8 @@ CURLcode get_block_template(CURL *curl, struct submit_block *template) {
         ret_code(ret);
     }
 
+    printf("Time: %x\n", header->time);
+
     if (!transactions || !nbits || !prev_hash) {
         err("Json decoding failed\n");
         ret_code(1);
@@ -381,7 +423,11 @@ CURLcode get_block_template(CURL *curl, struct submit_block *template) {
         ret_code(ret);
     }
     
-    build_merkle_root(tx_list, tx_list->len, &merkle_root);
+    ret = build_merkle_root(tx_list, tx_list->len, &merkle_root);
+    if (ret) {
+        err("Merkle root build failed\n");
+        ret_code(ret);
+    }
 
     memcpy(header->merkle_root_hash, merkle_root.byte_hash, sizeof header->merkle_root_hash);
 
@@ -406,7 +452,7 @@ CURLcode submit_block(CURL *curl, struct submit_block *block) {
     char *post_data = ccalloc(ser_block_size + strlen(submitblock_template) + 1, sizeof *post_data);
     char header_str[sizeof(serialized_block) * 2 + 1] = {0};
 
-    block_pack(&block->header, serialized_block);
+    block_serialize(&block->header, serialized_block);
     hex_to_string(serialized_block, header_str, sizeof serialized_block);
 
     sprintf(post_data, submitblock_template, header_str, block->tx_list.len, block->tx_list.raw_data);
@@ -538,10 +584,10 @@ void nbits_to_target(uint32_t nbits, hash_t *target) {
     }
     }
 
+    /*
     target->byte_hash[31] = 0;
     target->byte_hash[30] = 0;
     target->byte_hash[29] = 0xff;
-    /*
     target->byte_hash[28] = 0xff;
     target->byte_hash[27] = 0xff;
     */
@@ -599,6 +645,7 @@ int main(void) {
         err("Block submit failed\n");
         ret_code(1);
     }
+    
    
   cleanup:
     curl_easy_cleanup(curl);

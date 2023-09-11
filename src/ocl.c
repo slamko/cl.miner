@@ -179,6 +179,62 @@ int ocl_init(void) {
     return ret;
 }
 
+int ocl_merkle_root_hash(transaction_list_t *tx_list, hash_t *merkle_root) {
+    if (!tx_list || !merkle_root) {
+        return 1;
+    }
+
+    cl_kernel kernel = {0};
+    cl_int ret = {0};
+    hash_t *merkle_tree = NULL;
+    size_t merkle_tree_size = tx_list->len * sizeof (*merkle_tree);
+
+    merkle_tree = cmalloc(merkle_tree_size);
+    memcpy(merkle_tree, tx_list->txid_list, merkle_tree_size);
+
+    cl_mem tx_list_mem = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, merkle_tree_size, merkle_tree, &ret);
+    if (ret) {
+        error("Failed to allocate OCL buffer: %s\n", getErrorString(ret));
+        ret_label(clean_merkle_tree, ret);
+    }
+
+    kernel = clCreateKernel(program, "merkle_root_hash", &ret);
+    if (ret) {
+        error("merkle root: OCL kernel creation failed: %s\n", getErrorString(ret));
+        ret_label(clean_tx_mem, 1);
+    }
+
+    ret |= clSetKernelArg(kernel, 0, sizeof(cl_mem), &tx_list_mem);
+    ret |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &tx_list->len);
+
+    if (ret) {
+        error("merkle root: Invalid kernel args: %s\n", getErrorString(ret));
+        ret_code(1);
+    }
+
+    const size_t glob_wg[] = { align_down(tx_list->len / 2, 64) };
+    const size_t loc_wg[] = { 64 };
+
+    ret = clEnqueueNDRangeKernel(queue, kernel, 1, NULL, glob_wg, loc_wg, 0, NULL, NULL);
+    if (ret) {
+        error("merkle root: Kernel execution failed: %s\n", getErrorString(ret));
+        ret_code(1);
+    }
+
+    ret = clEnqueueReadBuffer(queue, tx_list_mem, CL_TRUE, 0u, sizeof (merkle_root->byte_hash), merkle_root->byte_hash, 0, NULL, NULL);
+    if (ret) {
+        error("Failed to merkle root buffer: %s\n", getErrorString(ret));
+        ret_code(1);
+    }
+  cleanup:
+    if (kernel) clReleaseKernel(kernel);
+ clean_tx_mem:
+    clReleaseMemObject(tx_list_mem);
+  clean_merkle_tree:
+    free(merkle_tree);
+
+    return ret;
+}
 
 int mine(struct block_header *block, hash_t *target, hash_t *hash) {
     if (!block || !target || !hash) {
@@ -237,9 +293,6 @@ int mine(struct block_header *block, hash_t *target, hash_t *hash) {
     const size_t glob_wg[] = { align_down(UINT32_MAX, 1024) };
     const size_t loc_wg[] = { 1024 };
 
-    /* const size_t glob_wg[] = { 2 }; */
-    /* const size_t loc_wg[] = { 2 }; */
-
     ret = clEnqueueNDRangeKernel(queue, kernel, 1, NULL, glob_wg, loc_wg, 0, NULL, NULL);
     if (ret) {
         error("Kernel execution failed: %s\n", getErrorString(ret));
@@ -262,7 +315,7 @@ int mine(struct block_header *block, hash_t *target, hash_t *hash) {
   clean_target_mem:
     clReleaseMemObject(target_mem);
   clean_inp_mem:
-    /* clReleaseMemObject(inp_mem); */
+    clReleaseMemObject(inp_mem);
 
     return ret;
 }

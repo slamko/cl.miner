@@ -20,4 +20,6 @@ void ocl_version(void);
 
 int mine(struct block_header *block, hash_t *target, hash_t *hash);
 
+int ocl_merkle_root_hash(transaction_list_t *tx_list, hash_t *merkle_root);
+
 #endif

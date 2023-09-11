@@ -305,34 +305,58 @@ __kernel void mine256(__global unsigned char *block_raw, __global uint *target,
     atomic_xchg(nonce, cur_nonce);
 }
 
-/*
 struct hash {
     unsigned char hash[32];
 };
 
-__kernel void merkle_root_hash(__global struct hash *txid_list,
-                               unsigned long len,
-                               __global unsigned char *root_hash) {
-    size_t mod = 2;
-
-    for (size_t i = 0; i < len; i += mod) {
-        uint8 concat_hash[64];
-        hash_t *hasha = &merkle_tree[i];
-        hash_t *hashb = hasha;
-
-        if (i + 1 < len) {
-            hashb = &merkle_tree[i + 1];
-        }
-        
-        memcpy(concat_hash, hasha->byte_hash, sizeof(hasha->byte_hash));
-        memcpy(concat_hash + sizeof (concat_hash) / 2, hashb->byte_hash, sizeof(hashb->byte_hash));
-
-        double_sha256(concat_hash, merkle_tree[i].byte_hash, sizeof concat_hash);
-        
-        mod *= 2;
+void memcpy_glob_to_priv(__private unsigned char *dest, __global unsigned char *src, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        dest[i] = src[i];
     }
-
- 
 }
 
-*/
+__kernel void merkle_root_hash(__global __read_write struct hash *txid_list,
+                               unsigned long len) {
+    size_t x = get_global_id(0);
+    size_t pair_len = len / 2;
+
+    if (x >= pair_len) {
+        return;
+    }
+
+    size_t mod = 2;
+
+    for (size_t i = pair_len; i >= 1; i /= 2) {
+        size_t cur_x = x * mod;
+        __private unsigned char concat_hash[64];
+        __global unsigned char *hasha = txid_list[cur_x].hash;
+        __global unsigned char *hashb = hasha;
+        
+        if (cur_x + 1 < len) {
+            hashb = txid_list[cur_x + 1].hash;
+        }
+        
+        memcpy_glob_to_priv(concat_hash, hasha, sizeof (txid_list[cur_x].hash));
+        memcpy_glob_to_priv(concat_hash + sizeof (concat_hash) / 2, hashb, sizeof (txid_list[cur_x + 1].hash));
+
+        __private unsigned char first_out[64] = {0};
+        __private unsigned char out[32] = {0};
+        __private uint hi[8] = {0};
+        
+        loc_sha256(concat_hash, 128, hi);
+        memcpyui(txid_list[cur_x].hash, hi, 8);
+        
+        first_out[32] = 0x80;
+        first_out[62] = 0x01; 
+        
+        memset_priv(hi, 0, sizeof hi);
+        loc_sha256(first_out, 64, hi);
+        memcpy_priv(out, hi, 8);
+        
+        if (x > i) {
+            break;
+        }
+
+        mod *= 2;
+    }
+}

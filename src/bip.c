@@ -9,8 +9,6 @@
 #include <stdbool.h>
 
 int build_merkle_root(transaction_list_t *tlist, size_t len, hash_t *merkle_root) {
-    hash_t *merkle_tree = NULL;
-
     if (!len) {
         err("merkle root: Invalid block\n");
         return 1;
@@ -22,30 +20,9 @@ int build_merkle_root(transaction_list_t *tlist, size_t len, hash_t *merkle_root
         memcpy(merkle_root->byte_hash, &tlist->txid_list[0], sizeof (merkle_root->byte_hash));
         return 0;
     }
+
+    ocl_merkle_root_hash(tlist, merkle_root);
     
-    merkle_tree = cmalloc(len * sizeof *merkle_tree);
-    memcpy(merkle_tree, tlist->txid_list, len * sizeof *merkle_tree);
-
-    size_t mod = 2;
-    for (size_t i = 0; i < len; i += mod) {
-        uint8_t concat_hash[64];
-        hash_t *hasha = &merkle_tree[i];
-        hash_t *hashb = hasha;
-
-        if (i + 1 < len) {
-            hashb = &merkle_tree[i + 1];
-        }
-        
-        memcpy(concat_hash, hasha->byte_hash, sizeof(hasha->byte_hash));
-        memcpy(concat_hash + sizeof (concat_hash) / 2, hashb->byte_hash, sizeof(hashb->byte_hash));
-
-        double_sha256(concat_hash, merkle_tree[i].byte_hash, sizeof concat_hash);
-        
-        mod *= 2;
-    }
-
-    memcpy(merkle_root, &merkle_tree[0], sizeof *merkle_root);
-    free(merkle_tree);
     return 0;
 }
 

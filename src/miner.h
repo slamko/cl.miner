@@ -9,6 +9,11 @@
 #define BITCOIND_URL "http://127.0.0.1:8333"
 #endif
 
+extern char *bitcoind_url;
+extern char *username;
+extern char *password;
+extern char *userlogin;
+
 #define HASH_LEN 256
 #define STR_HASH_LEN (HASH_LEN / 8)
 

@@ -304,3 +304,35 @@ __kernel void mine256(__global unsigned char *block_raw, __global uint *target,
 
     atomic_xchg(nonce, cur_nonce);
 }
+
+/*
+struct hash {
+    unsigned char hash[32];
+};
+
+__kernel void merkle_root_hash(__global struct hash *txid_list,
+                               unsigned long len,
+                               __global unsigned char *root_hash) {
+    size_t mod = 2;
+
+    for (size_t i = 0; i < len; i += mod) {
+        uint8 concat_hash[64];
+        hash_t *hasha = &merkle_tree[i];
+        hash_t *hashb = hasha;
+
+        if (i + 1 < len) {
+            hashb = &merkle_tree[i + 1];
+        }
+        
+        memcpy(concat_hash, hasha->byte_hash, sizeof(hasha->byte_hash));
+        memcpy(concat_hash + sizeof (concat_hash) / 2, hashb->byte_hash, sizeof(hashb->byte_hash));
+
+        double_sha256(concat_hash, merkle_tree[i].byte_hash, sizeof concat_hash);
+        
+        mod *= 2;
+    }
+
+ 
+}
+
+*/

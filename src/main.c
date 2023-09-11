@@ -1,4 +1,5 @@
 #include "miner.h"
+#include <bits/getopt_core.h>
 #include <curl/curl.h>
 #include <stddef.h>
 #include <string.h>
@@ -8,13 +9,38 @@
 #include <stdint.h>
 #include <arpa/inet.h>
 #include <stdbool.h>
+#include <unistd.h>
 #include "ocl.h"
 #include "bip.h"
 #include "rpc.h"
 
-int main(void) {
+int main(int argc, char **argv) {
     int ret = {0};
-    CURL *curl = curl_easy_init();
+    CURL *curl = NULL;
+    int opt = 0;
+
+    while((opt = getopt(argc, argv, "u:n:p:")) != -1) {
+        switch (opt) {
+        case 'u':
+            bitcoind_url = optarg;
+            break;
+        case 'n':
+            username = optarg;
+            break;
+        case 'p':
+            password = optarg;
+            break;
+        default:
+            error("Unknown arg %c: miner -u url -n username -p password\n", optopt);    
+            return 1;
+            break;
+        }
+    }
+
+    userlogin = ccalloc(strlen(username) + strlen(password) + 2, sizeof *userlogin);
+    sprintf(userlogin, "%s:%s", username, password);
+    
+    curl = curl_easy_init();
 
     if (!curl) {
         err("Curl init error\n");

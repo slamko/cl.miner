@@ -10,6 +10,11 @@
 #include "stdbool.h"
 #include "bip.h"
 
+char *bitcoind_url = BITCOIND_URL;
+char *username = "username";
+char *password = "password";
+char *userlogin;
+
 const char *blocktemplate_post_data = R(
     {"jsonrpc": 2.0,
      "id": "cumainer",
@@ -49,7 +54,7 @@ CURLcode json_rpc(CURL *curl, const char *post_data, char **dest_str) {
     headers = curl_slist_append(NULL, "context-type: text/plain;");
 
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_URL, BITCOIND_URL);
+    curl_easy_setopt(curl, CURLOPT_URL, bitcoind_url);
 
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, strlen(post_data));
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data);
@@ -58,7 +63,7 @@ CURLcode json_rpc(CURL *curl, const char *post_data, char **dest_str) {
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, dest_str);
 
-    curl_easy_setopt(curl, CURLOPT_USERPWD, "slamko:VenezuellaMiner00");
+    curl_easy_setopt(curl, CURLOPT_USERPWD, userlogin);
     curl_easy_setopt(curl, CURLOPT_USE_SSL, CURLUSESSL_TRY);
     
     CURLcode ret = curl_easy_perform(curl);
@@ -78,6 +83,11 @@ CURLcode get_json(CURL *curl, const char *post, json_t **json) {
     ret = json_rpc(curl, post, &json_str);
     if (ret) {
         error("RPC error: %d\n", ret);
+        ret_code(ret);
+    }
+
+    if (!json_str) {
+        err("RPC: no result\n");
         ret_code(ret);
     }
 

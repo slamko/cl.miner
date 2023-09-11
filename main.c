@@ -268,14 +268,14 @@ size_t build_coinbase(transaction_list_t *tlist) {
     set_compact8(&cb.tx_in_cnt, 1);
     struct cb_tx_in *tx_in = &cb.tx_ins[0];
 
-    size_t script_len = 4;
+    size_t script_len = 2;
     memset(tx_in->hash, 0, sizeof cb.tx_ins->hash);
     tx_in->index = 0xFFFFFFFF;
     set_compact8(&tx_in->script_bytes, script_len);
 
     tx_in->script = ccalloc(script_len, 1);
-    tx_in->script[0] = 0x3;
-    tx_in->script[1] = 0x2;
+    tx_in->script[0] = 0x52;
+    tx_in->script[1] = 0x0;
     tx_in->sequence = 0xFFFFFFFF;
 
     set_compact8(&cb.tx_out_cnt, 1);

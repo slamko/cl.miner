@@ -203,7 +203,7 @@ int mine(struct block_header *block, hash_t *target, hash_t *hash) {
     uint32_t big_len = htonl((uint32_t)BLOCK_RAW_LEN << 3);
     memcpy(block_input + sizeof(block_input) - sizeof(big_len), &big_len, sizeof(big_len));
 
-    print_buf("\n Mine Input", block_input, sizeof block_input);
+    /* print_buf("\n Mine Input", block_input, sizeof block_input); */
 
     cl_int ret = {0};
 
@@ -287,7 +287,7 @@ int sha256(const uint8_t *data, uint8_t *out, size_t len) {
     uint32_t big_len = htonl((uint32_t)len << 3);
     memcpy((char *)(input + al_inp_size - sizeof(big_len)), &big_len, sizeof(big_len));
 
-    print_buf("\nSha256 Input", input, al_inp_size);
+    /* print_buf("\nSha256 Input", input, al_inp_size); */
 
     cl_int ret = {0};
 

@@ -292,7 +292,7 @@ __kernel void mine256(__global unsigned char *block_raw, __global uint *target,
             ((hi[i] & 0xFF000000) >> 24);
                 
         if (target[i] > big_hi) {
-            printf("Hash: %x > %x. Nonce: %u\n", target[i] , big_hi, cur_nonce);
+            /* printf("Hash: %x > %x. Nonce: %u\n", target[i] , big_hi, cur_nonce); */
             atomic_xchg(nonce, cur_nonce);
             return;
         }

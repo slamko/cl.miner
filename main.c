@@ -7,6 +7,7 @@
 #include <jansson.h>
 #include <stdint.h>
 #include <arpa/inet.h>
+#include <stdbool.h>
 #include "ocl.h"
 
 const char *blocktemplate_post_data = R(
@@ -94,6 +95,7 @@ int build_merkle_root(transaction_list_t *tlist, size_t len, hash_t *merkle_root
             {0x72, 0x95, 0xc5, 0xb4, 0x43, 0xcd, 0x2a, 0x9e, 0x8d, 0x53,
              0xa3, 0x3d, 0x7f, 0x19, 0xaf, 0xa7, 0x2, 0x1, 0x43, 0x78, 0x11, 0x5a, 0xf7, 0x37, 0xef, 0x49, 0x56, 0x60, 0xba, 0xd6, 0x50,
              0x78};
+
         memcpy(merkle_root->byte_hash, &tlist->txid_list[0], sizeof (merkle_root->byte_hash));
         return 0;
     }
@@ -124,53 +126,185 @@ int build_merkle_root(transaction_list_t *tlist, size_t len, hash_t *merkle_root
     return 0;
 }
 
-struct tx_in {
-    uint32_t *hash;
-    
-} __attribute__((packed));
+typedef struct compact_size {
+    union {
+        uint32_t val32;
+        uint16_t val16;
+        uint8_t val8;
+    };
 
-union compact_size {
-    uint32_t val32;
-    uint16_t val16;
-    uint8_t val8;
+    uint8_t size;
+} compact_t;
+
+struct cb_tx_in {
+    uint8_t hash[32];
+    uint32_t index;
+    compact_t script_bytes;
+    uint8_t *script;
+    uint32_t sequence;
 };
 
-struct raw_transaction {
+struct cb_tx_out {
+    int64_t value;
+    compact_t pk_script_len;
+    uint8_t *pk_script;
+};
+
+struct cb_raw_tx {
     int32_t version;
-    union compact_size tx_in_cnt;
-    struct tx_in *tx_ins;
-    union compact_size tx_out_cnt;
-    struct tx_out *tx_outs;
+
+    compact_t tx_in_cnt;
+    struct cb_tx_in tx_ins[1];
+
+    compact_t tx_out_cnt;
+    struct cb_tx_out tx_outs[1];
+
     uint32_t lock_time;
+};
 
-} __attribute__ ((packed));
+size_t get_compact_size(compact_t compact) {
+    return compact.val32 + compact.size;
+}
 
-void write_coinbase(uint32_t time, uint8_t *buf) {
-    size_t coinbase_size = 70;
+size_t get_tx_out_size(const struct cb_tx_out *out) {
+    return (sizeof (out->value) - sizeof (out->pk_script_len) + get_compact_size(out->pk_script_len));
+}
+
+size_t get_tx_in_size(const struct cb_tx_in *in) {
+    return (sizeof (*in) - sizeof (in->script) - sizeof(in->script_bytes) + get_compact_size(in->script_bytes));
+}
+
+size_t get_cb_size(const struct cb_raw_tx *cb) {
     
-    memset(buf, 0, coinbase_size);
+    return (sizeof (cb->version) + sizeof (cb->lock_time) +
+            (get_tx_in_size(&cb->tx_ins[0])) + cb->tx_in_cnt.size +
+            (get_tx_out_size(cb->tx_outs)) + cb->tx_out_cnt.size
+        );
+}
 
-    buf[0] = 0x1;
-    buf[4] = 0x1;
-    memset(buf + 37, 0xFF, 4);
-    buf[41] = 0x03;
-    buf[42] = 0x01;
+bool is_valid_compact_size(const compact_t *compact) {
+    return !!compact->size;
+}
+
+typedef struct serializer_stream {
+    size_t cur_addr;
+    size_t len;
+} serializer_t;
+
+void serialize_init(struct serializer_stream *stream, size_t len) {
+    stream->cur_addr = 0;
+    stream->len = len;
+}
+
+void serialize_write(serializer_t *stream, void *dest, const void *src, size_t size) {
+    if (stream->cur_addr >= stream->len) {
+        err("seralize write: Too short stream\n");
+        return;
+    }
     
-    memset(buf + 45, 0xFF, 4);
-    buf[49] = 0x01;
-    memset(buf + 58, 0x00, sizeof time);
+    memcpy(dest + stream->cur_addr, src, size);
+    stream->cur_addr += size; 
+}
+
+void write_coinbase(struct cb_raw_tx *cb, uint8_t *buf, size_t len) {
+    serializer_t stream = {0};
+
+    serialize_init(&stream, len);
+    serialize_write(&stream, buf, &cb->version, sizeof cb->version);
+
+    if (!is_valid_compact_size(&cb->tx_in_cnt) || !is_valid_compact_size(&cb->tx_out_cnt)) {
+        err("Compact error\n");
+        exit(1);
+    }
+
+    serialize_write(&stream, buf, &cb->tx_in_cnt.val32, cb->tx_in_cnt.size);
+    serialize_write(&stream, buf, cb->tx_ins[0].hash, sizeof cb->tx_ins[0].hash);
+    serialize_write(&stream, buf, &cb->tx_ins[0].index, sizeof cb->tx_ins[0].index);
+    serialize_write(&stream, buf, &cb->tx_ins[0].script_bytes.val32, cb->tx_ins[0].script_bytes.size);
+
+    if (!cb->tx_ins[0].script) {
+        err("No tx in script\n");
+    } else {
+        serialize_write(&stream, buf, cb->tx_ins[0].script, cb->tx_ins[0].script_bytes.val32);
+    }
+
+    serialize_write(&stream, buf, &cb->tx_ins[0].sequence, sizeof cb->tx_ins[0].sequence);
+
+    serialize_write(&stream, buf, &cb->tx_out_cnt.val32, cb->tx_out_cnt.size);
+
+    serialize_write(&stream, buf, &cb->tx_outs[0].value, sizeof cb->tx_outs[0].value);
+    serialize_write(&stream, buf, &cb->tx_outs[0].pk_script_len.val32, cb->tx_outs[0].pk_script_len.size);
+
+    if (!cb->tx_outs[0].pk_script) {
+        err("No tx out pk_script\n");
+    } else {
+        serialize_write(&stream, buf, cb->tx_outs[0].pk_script, cb->tx_outs[0].pk_script_len.val32);
+    }
+
+    serialize_write(&stream, buf, &cb->lock_time, sizeof cb->lock_time);
+    printf("Stream size: %zu\n", stream.cur_addr);
+}
+
+void set_compact8(compact_t *compact, uint8_t val) {
+    compact->val8 = val;
+    compact->size = sizeof val;
+}
+
+void set_compact16(compact_t *compact, uint16_t val) {
+    compact->val16 = val;
+    compact->size = sizeof val;
+}
+
+void set_compact32(compact_t *compact, uint32_t val) {
+    compact->val32 = val;
+    compact->size = sizeof val;
 }
 
 size_t build_coinbase(transaction_list_t *tlist) {
-    uint8_t coinbase_data[70] = {0};
-    
-    tlist->raw_data = ccalloc(sizeof coinbase_data * 2 + 1, sizeof (*tlist->raw_data));
-    write_coinbase(time(NULL), coinbase_data);
-    hex_to_string(coinbase_data, tlist->raw_data, sizeof coinbase_data);
-    
-    double_sha256(coinbase_data, tlist->txid_list->byte_hash, sizeof coinbase_data);
+    struct cb_raw_tx cb = {0};
+    cb.lock_time = 0x00;
+    cb.version = 0x01;
 
-    return strlen(tlist->raw_data);
+    set_compact8(&cb.tx_in_cnt, 1);
+    struct cb_tx_in *tx_in = &cb.tx_ins[0];
+
+    size_t script_len = 4;
+    memset(tx_in->hash, 0, sizeof cb.tx_ins->hash);
+    tx_in->index = 0xFFFFFFFF;
+    set_compact8(&tx_in->script_bytes, script_len);
+
+    tx_in->script = ccalloc(script_len, 1);
+    tx_in->script[0] = 0x3;
+    tx_in->script[1] = 0x2;
+    tx_in->sequence = 0xFFFFFFFF;
+
+    set_compact8(&cb.tx_out_cnt, 1);
+    struct cb_tx_out *tx_out = cb.tx_outs;
+
+    size_t tx_out_pk_len = 0;
+    tx_out->value = 0;
+    set_compact8(&tx_out->pk_script_len, tx_out_pk_len);
+    tx_out->pk_script = NULL;
+    
+    size_t cb_size = get_cb_size(&cb);
+    printf("CB size: %zu\n", cb_size);
+    
+    size_t rdata_size = cb_size * 2 + 1;
+
+    uint8_t *coinbase_data = ccalloc(cb_size, 1);
+    
+    tlist->raw_data = ccalloc(rdata_size, sizeof (*tlist->raw_data));
+    write_coinbase(&cb, coinbase_data, cb_size);
+
+    hex_to_string(coinbase_data, tlist->raw_data, cb_size);
+    printf("Raw data: %s\n", tlist->raw_data);
+    
+    double_sha256(coinbase_data, &tlist->txid_list->byte_hash[0], cb_size);
+
+    free(coinbase_data);
+    free(tx_in->script);
+
+    return rdata_size;
 }
 
 int build_transaction_list(json_t *t_arr, transaction_list_t *tlist) {
@@ -280,7 +414,7 @@ void block_pack(const struct block_header *block, uint8_t raw[BLOCK_RAW_LEN]) {
     memcpy(raw, &big_version, sizeof block->version);
 
     memcpy_be(raw + 4, &block->prev_hash, sizeof block->prev_hash);
-    memcpy_be(raw + 36, &block->merkle_root_hash, sizeof block->merkle_root_hash);
+    memcpy(raw + 36, &block->merkle_root_hash, sizeof block->merkle_root_hash);
 
     uint32_t big_time = block->time;
     memcpy(raw + 68, &big_time, sizeof block->time);
@@ -296,7 +430,7 @@ void block_serialize(const struct block_header *block, uint8_t raw[BLOCK_RAW_LEN
     memcpy(raw, &big_version, sizeof block->version);
 
     memcpy_be(raw + 4, &block->prev_hash, sizeof block->prev_hash);
-    memcpy_be(raw + 36, &block->merkle_root_hash, sizeof block->merkle_root_hash);
+    memcpy(raw + 36, &block->merkle_root_hash, sizeof block->merkle_root_hash);
 
     memcpy(raw + 68, &block->time, sizeof block->time);
 

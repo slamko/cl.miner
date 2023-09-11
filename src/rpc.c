@@ -211,6 +211,7 @@ CURLcode submit_block(CURL *curl, struct submit_block *block) {
     
   cleanup:
     free(post_data);
+    free(res_str);
     return ret;
 }
 

@@ -19,4 +19,6 @@ int build_transaction_list(json_t *t_arr, transaction_list_t *tlist);
 
 int build_merkle_root(transaction_list_t *tlist, size_t len, hash_t *merkle_root);
 
+void submit_block_free(struct submit_block *block);
+
 #endif

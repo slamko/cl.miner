@@ -26,6 +26,11 @@ int build_merkle_root(transaction_list_t *tlist, size_t len, hash_t *merkle_root
     return 0;
 }
 
+void submit_block_free(struct submit_block *block) {
+    free(block->tx_list.raw_data);
+    free(block->tx_list.txid_list);
+}
+
 typedef struct compact_size {
     union {
         uint32_t val32;
@@ -168,6 +173,10 @@ size_t uint_byte_num(uint32_t val) {
     return 1;
 }
 
+void cb_tx_free(struct cb_raw_tx *tx) {
+    free(tx->tx_ins[0].script);
+}
+
 size_t build_coinbase(transaction_list_t *tlist) {
     struct cb_raw_tx cb = {0};
     cb.lock_time = 0x00;
@@ -219,7 +228,7 @@ size_t build_coinbase(transaction_list_t *tlist) {
     double_sha256(coinbase_data, &tlist->txid_list->byte_hash[0], cb_size);
 
     free(coinbase_data);
-    free(tx_in->script);
+    cb_tx_free(&cb);
 
     return rdata_size;
 }

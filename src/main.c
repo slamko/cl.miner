@@ -1,5 +1,4 @@
 #include "miner.h"
-#include <bits/getopt_core.h>
 #include <curl/curl.h>
 #include <stddef.h>
 #include <string.h>
@@ -10,14 +9,23 @@
 #include <arpa/inet.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <signal.h>
 #include "ocl.h"
 #include "bip.h"
 #include "rpc.h"
+
+void cleanup(int sig) {
+    printf("SIGINT Received: cleaning OpenCL context...\n");
+    free(userlogin);
+    ocl_free();
+    exit(1);
+}
 
 int main(int argc, char **argv) {
     int ret = {0};
     CURL *curl = NULL;
     int opt = 0;
+
 
     while((opt = getopt(argc, argv, "u:n:p:")) != -1) {
         switch (opt) {
@@ -39,6 +47,12 @@ int main(int argc, char **argv) {
 
     userlogin = ccalloc(strlen(username) + strlen(password) + 2, sizeof *userlogin);
     sprintf(userlogin, "%s:%s", username, password);
+
+    struct sigaction clean_action = {0};
+    clean_action.sa_handler = &cleanup;
+    clean_action.sa_flags = 0;
+
+    sigaction(SIGINT, &clean_action, NULL);
     
     curl = curl_easy_init();
 
@@ -85,6 +99,8 @@ int main(int argc, char **argv) {
             err("Block submit failed\n");
             ret_code(ret);
         }
+
+        submit_block_free(&submit);
     }
     
    

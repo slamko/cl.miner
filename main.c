@@ -260,6 +260,14 @@ void set_compact32(compact_t *compact, uint32_t val) {
     compact->size = sizeof val;
 }
 
+size_t uint_byte_num(uint32_t val) {
+    if (val >> 24) return 4;
+    if (val >> 16) return 3;
+    if (val >= 0x80) return 2;
+
+    return 1;
+}
+
 size_t build_coinbase(transaction_list_t *tlist) {
     struct cb_raw_tx cb = {0};
     cb.lock_time = 0x00;
@@ -268,14 +276,23 @@ size_t build_coinbase(transaction_list_t *tlist) {
     set_compact8(&cb.tx_in_cnt, 1);
     struct cb_tx_in *tx_in = &cb.tx_ins[0];
 
-    size_t script_len = 2;
+    size_t height_byte_num = uint_byte_num(tlist->height);
+    size_t script_len = height_byte_num + 1;
     memset(tx_in->hash, 0, sizeof cb.tx_ins->hash);
     tx_in->index = 0xFFFFFFFF;
     set_compact8(&tx_in->script_bytes, script_len);
 
     tx_in->script = ccalloc(script_len, 1);
-    tx_in->script[0] = 0x52;
-    tx_in->script[1] = 0x0;
+
+    if (tlist->height <= 16) {
+        tx_in->script[0] = (uint8_t)0x50 + (uint8_t)tlist->height;
+        tx_in->script[1] = 1;
+    } else {
+        tx_in->script[0] = height_byte_num;
+        memcpy(tx_in->script + 1, &tlist->height, height_byte_num);
+        printf("Height: %u\n", tlist->height);
+    }
+
     tx_in->sequence = 0xFFFFFFFF;
 
     set_compact8(&cb.tx_out_cnt, 1);
@@ -506,6 +523,7 @@ CURLcode get_block_template(CURL *curl, struct submit_block *template) {
     json_t *json = NULL, *result = NULL;
     char *nbits = NULL, *prev_hash = NULL;
     json_t *transactions = NULL;
+    int32_t height = 0;
 
     struct block_header *header = &template->header;
 
@@ -522,12 +540,13 @@ CURLcode get_block_template(CURL *curl, struct submit_block *template) {
     }
     
     if ((ret = json_unpack(result,
-                           "{s:i, s:s, s:o, s:i, s:s}",
+                           "{s:i, s:s, s:o, s:i, s:s, s:i}",
                            "version", &header->version,
                            "previousblockhash", &prev_hash,
                            "transactions", &transactions,
                            "curtime", &header->time,
-                           "bits", &nbits))) {
+                           "bits", &nbits,
+                           "height", &height))) {
 
         err("Unknown bitcoind response format\n");
         ret_code(ret);
@@ -548,6 +567,7 @@ CURLcode get_block_template(CURL *curl, struct submit_block *template) {
     printf("Nbits: %x\n", header->target);
 
     transaction_list_t *tx_list = &template->tx_list;
+    tx_list->height = height;
     hash_t merkle_root = {0};
 
     ret = build_transaction_list(transactions, tx_list);
@@ -739,18 +759,7 @@ int main(void) {
         error("OpenCL initialization failed: %d\n", ret);
     }
     
-    struct block_header block;
-
-    block.nonce = 0x1;
-    block.version = 0x11;
-    block.target = 0xabc1256;
-
-    memset(block.merkle_root_hash, 0x4f, sizeof block.merkle_root_hash);
-    memset(block.prev_hash, 0xb1, sizeof block.merkle_root_hash);
-
-    uint8_t raw[80];
-    block_pack(&block, raw);
-
+    while(1) {
     struct submit_block submit = {0};
     if (get_block_template(curl, &submit)) {
         err("Get block template failed\n");
@@ -778,6 +787,7 @@ int main(void) {
     if (submit_block(curl, &submit)) {
         err("Block submit failed\n");
         ret_code(1);
+    }
     }
     
    

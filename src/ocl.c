@@ -125,7 +125,7 @@ int ocl_init(void) {
         ret_code(1);
     }
 
-    FILE *srcf = fopen("miner.cl", "r");
+    FILE *srcf = fopen("src/miner.cl", "r");
     if (!srcf) {
         err("No source file\n");
         ret_code(2);
@@ -179,13 +179,6 @@ int ocl_init(void) {
     return ret;
 }
 
-void print_buf(const char *name, const uint8_t *buf, size_t len) {
-    printf("Buf: %s\n", name);
-    for (size_t i = 0; i < len; i++) {
-        printf("%02x", buf[i]);
-    }
-    putc('\n', stdout);
-}
 
 int mine(struct block_header *block, hash_t *target, hash_t *hash) {
     if (!block || !target || !hash) {

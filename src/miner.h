@@ -4,7 +4,7 @@
 #define REG_TEST
 
 #ifdef REG_TEST
-#define BITCOIND_URL "http://127.0.0.1:18443"
+#define BITCOIND_URL "http://127.0.0.1:18444"
 #else
 #define BITCOIND_URL "http://127.0.0.1:8333"
 #endif

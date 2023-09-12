@@ -207,10 +207,12 @@ size_t build_coinbase(transaction_list_t *tlist) {
     set_compact8(&cb.tx_out_cnt, 1);
     struct cb_tx_out *tx_out = cb.tx_outs;
 
-    size_t tx_out_pk_len = 0;
-    tx_out->value = 0;
+    size_t tx_out_pk_len = 22;
+    tx_out->value = 25;
     set_compact8(&tx_out->pk_script_len, tx_out_pk_len);
-    tx_out->pk_script = NULL;
+    const char pk_script_str[44] = "0014e0fabcd9703e28ccfa907bc35e8dbe307c300319";
+    tx_out->pk_script = cmalloc(sizeof pk_script_str / 2);
+    string_to_hex(pk_script_str, tx_out->pk_script, sizeof pk_script_str);
     
     size_t cb_size = get_cb_size(&cb);
     printf("CB size: %zu\n", cb_size);

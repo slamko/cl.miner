@@ -1,0 +1,14 @@
+*** Bitcoin miner on OpenCL built with "getblocktemplate" protocol
+
+This is mainly an educational project, though contrary to many educational bitcoin miners on github
+this one is able (hopefully) to actually mine bitcoins (at least in test mode), as most of the mining
+projects in the net focus mainly on the algorithm without implementing Bitcoin's RPC protocol (which is not
+that easy to do from scratch). Also it is kinda rare to find a repo using *getblocktemplate* protocol as older
+projects stick to legacy *getwork*. Finaly there are a lot of CPU miners examples so this one may be
+somewhat more interesting (though obviously it does not offer here "the most optimized GPU algorithm").
+
+*** All in all
+This may serve as a reference/ example implementation for:
+- *getblocktemplate* protocol
+- GPU accelerated mining 
+- OpenCL examples somewhat more interesting than basic vector addition.

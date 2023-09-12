@@ -9,9 +9,10 @@
 #define BITCOIND_URL "http://127.0.0.1:8333"
 #endif
 
-extern char *bitcoind_url;
-extern char *username;
-extern char *password;
+extern const char *bitcoind_url;
+extern const char *username;
+extern const char *password;
+extern const char *address;
 extern char *userlogin;
 
 #define HASH_LEN 256
@@ -85,11 +86,16 @@ typedef union hash {
 } hash_t;
 
 typedef struct transaction_list {
-    char *raw_data;
     hash_t *txid_list;
-    size_t len;
+
+    char *raw_data;
     size_t data_size;
+
+    size_t len;
     uint32_t height;
+
+    uint8_t *cb_out_pk_script;
+    size_t pk_script_bytes;
 } transaction_list_t;
 
 struct submit_block {

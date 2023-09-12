@@ -10,10 +10,19 @@
 #include "stdbool.h"
 #include "bip.h"
 
-char *bitcoind_url = BITCOIND_URL;
-char *username = "username";
-char *password = "password";
+const char *bitcoind_url = BITCOIND_URL;
+const char *username = "username";
+const char *password = "password";
+const char *address;
 char *userlogin;
+
+const char *getaddrinfo_post_data = R(
+    {"jsonrpc": 2.0,
+     "id": "cumainer",
+     "method": "getaddressinfo",
+     "params": ["%s"]
+    }
+    );
 
 const char *blocktemplate_post_data = R(
     {"jsonrpc": 2.0,
@@ -197,8 +206,8 @@ CURLcode submit_block(CURL *curl, struct submit_block *block) {
 
     sprintf(post_data, submitblock_template, header_str, block->tx_list.len, block->tx_list.raw_data);
 
-    puts("Hero what i have\n");
-    puts(post_data);
+    /* puts("Hero what i have\n"); */
+    /* puts(post_data); */
 
     ret = json_rpc(curl, post_data, &res_str);
     if (!res_str) {
@@ -212,6 +221,50 @@ CURLcode submit_block(CURL *curl, struct submit_block *block) {
   cleanup:
     free(post_data);
     free(res_str);
+    return ret;
+}
+
+CURLcode get_address_info(CURL *curl, const char *address, size_t *pk_script_len, uint8_t **pub_key_script) {
+    json_error_t err = {0};
+    CURLcode ret = {0};
+    json_t *rep_json = {0}, *result = {0};
+    char *pk_script = {0};
+    char *addrinfo_post_data = ccalloc(strlen(address) + 2 + strlen(getaddrinfo_post_data), sizeof *addrinfo_post_data);
+    sprintf(addrinfo_post_data, getaddrinfo_post_data, address);
+    
+    ret = get_json(curl, addrinfo_post_data, &rep_json);
+    if (ret) {
+        error("Address info fetching failed: %d\n", ret);
+        ret_code(ret);
+    }
+
+    ret = json_unpack(rep_json, "{s:O}", "result", &result);
+    if (ret) {
+        err("Unknown bitcoind response format\n");
+        ret_code(ret);
+    }
+
+    ret = json_unpack(result, "{s:s}", "scriptPubKey", &pk_script);
+    if (ret) {
+        err("Couldn't get public key script\n");
+        ret_code(ret);
+    }
+    
+    if (!pk_script) {
+        err("Couldn't get public key script\n");
+        ret_code(ret);
+    }
+
+    size_t pk_str_len = strlen(pk_script);
+    *pk_script_len = pk_str_len / 2;
+    *pub_key_script = ccalloc(*pk_script_len, sizeof (**pub_key_script));
+    string_to_hex(pk_script, *pub_key_script, pk_str_len);
+
+  cleanup:
+    if (rep_json) json_decref(rep_json);
+    if (result) json_decref(result);
+    free(addrinfo_post_data);
+
     return ret;
 }
 
@@ -257,5 +310,3 @@ CURLcode get_best_block_hash(CURL *curl, hash_t *res) {
     }
     return ret;
 }
-
-

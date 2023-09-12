@@ -177,17 +177,10 @@ void cb_tx_free(struct cb_raw_tx *tx) {
     free(tx->tx_ins[0].script);
 }
 
-size_t build_coinbase(transaction_list_t *tlist) {
-    struct cb_raw_tx cb = {0};
-    cb.lock_time = 0x00;
-    cb.version = 0x01;
-
-    set_compact8(&cb.tx_in_cnt, 1);
-    struct cb_tx_in *tx_in = &cb.tx_ins[0];
-
+void build_cb_tx_in(struct cb_tx_in *tx_in, transaction_list_t *tlist) {
     size_t height_byte_num = uint_byte_num(tlist->height);
     size_t script_len = height_byte_num + 1;
-    memset(tx_in->hash, 0, sizeof cb.tx_ins->hash);
+    memset(tx_in->hash, 0, sizeof tx_in->hash);
     tx_in->index = 0xFFFFFFFF;
     set_compact8(&tx_in->script_bytes, script_len);
 
@@ -199,26 +192,32 @@ size_t build_coinbase(transaction_list_t *tlist) {
     } else {
         tx_in->script[0] = height_byte_num;
         memcpy(tx_in->script + 1, &tlist->height, height_byte_num);
-        printf("Height: %u\n", tlist->height);
     }
 
     tx_in->sequence = 0xFFFFFFFF;
+}
 
-    set_compact8(&cb.tx_out_cnt, 1);
-    struct cb_tx_out *tx_out = cb.tx_outs;
-
-    size_t tx_out_pk_len = 22;
+void build_cb_out(struct cb_tx_out *tx_out, transaction_list_t *tlist) {
+    size_t tx_out_pk_len = tlist->pk_script_bytes;
     tx_out->value = 25;
     set_compact8(&tx_out->pk_script_len, tx_out_pk_len);
-    const char pk_script_str[44] = "0014e0fabcd9703e28ccfa907bc35e8dbe307c300319";
-    tx_out->pk_script = cmalloc(sizeof pk_script_str / 2);
-    string_to_hex(pk_script_str, tx_out->pk_script, sizeof pk_script_str);
-    
-    size_t cb_size = get_cb_size(&cb);
-    printf("CB size: %zu\n", cb_size);
-    
-    size_t rdata_size = cb_size * 2 + 1;
+    tx_out->pk_script = cmalloc(tlist->pk_script_bytes);
+    memcpy(tx_out->pk_script, tlist->cb_out_pk_script, tlist->pk_script_bytes);
+}
 
+size_t build_coinbase(transaction_list_t *tlist) {
+    struct cb_raw_tx cb = {0};
+    cb.lock_time = 0x00;
+    cb.version = 0x01;
+
+    set_compact8(&cb.tx_in_cnt, 1);
+    build_cb_tx_in(&cb.tx_ins[0], tlist);
+
+    set_compact8(&cb.tx_out_cnt, 1);
+    build_cb_out(&cb.tx_outs[0], tlist);
+   
+    size_t cb_size = get_cb_size(&cb);
+    size_t rdata_size = cb_size * 2 + 1;
     uint8_t *coinbase_data = ccalloc(cb_size, 1);
     
     tlist->raw_data = ccalloc(rdata_size, sizeof (*tlist->raw_data));

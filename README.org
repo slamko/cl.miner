@@ -1,4 +1,4 @@
-*** Bitcoin miner on OpenCL built with "getblocktemplate" protocol
+*** Bitcoin miner on OpenCL built upon "getblocktemplate" protocol
 
 This is mainly an educational project, though contrary to many educational bitcoin miners on github
 this one is able (hopefully) to actually mine bitcoins (at least in test mode), as most of the mining

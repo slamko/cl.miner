@@ -399,9 +399,9 @@ int ocl_free(void) {
     cl_int ret = {0};
 
     ret = clReleaseContext(context);
-    if (ret) return ret;
+    /* if (ret) return ret; */
     ret = clReleaseProgram(program);
-    if (ret) return ret;
+    /* if (ret) return ret; */
     ret = clReleaseCommandQueue(queue);
 
     return ret;

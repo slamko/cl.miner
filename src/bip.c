@@ -27,6 +27,7 @@ int build_merkle_root(transaction_list_t *tlist, size_t len, hash_t *merkle_root
 }
 
 void submit_block_free(struct submit_block *block) {
+    free(block->tx_list.cb_out_pk_script);
     free(block->tx_list.raw_data);
     free(block->tx_list.txid_list);
 }
@@ -175,6 +176,7 @@ size_t uint_byte_num(uint32_t val) {
 
 void cb_tx_free(struct cb_raw_tx *tx) {
     free(tx->tx_ins[0].script);
+    free(tx->tx_outs[0].pk_script);
 }
 
 void build_cb_tx_in(struct cb_tx_in *tx_in, transaction_list_t *tlist) {

@@ -101,6 +101,7 @@ typedef struct transaction_list {
 struct submit_block {
     struct block_header header;
     transaction_list_t tx_list;
+    hash_t target;
 };
 
 void block_pack(const struct block_header *block, uint8_t raw[BLOCK_RAW_LEN]);

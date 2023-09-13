@@ -7,8 +7,33 @@ that easy to do from scratch). Also it is kinda rare to find a repo using *getbl
 projects stick to legacy *getwork*. Finaly there are a lot of CPU miners examples so this one may be
 somewhat more interesting (though obviously it does not offer here "the most optimized GPU algorithm").
 
+*** Quickstart
+cl.miner requires the folowing libraries to build:
+- OpenCL
+- libcurl
+- jansson
+
+If your are on Linux, running *make* should be sufficient to build an executable.
+
+Usage:
+#+begin_src sh
+miner [options]
+
+Options:
+-u <bitcoind_url>
+-n <username>
+-p <password>
+-a <btc_address>
+
+All of the options are optional. By default it will connect to localhost:18443 with username *username* and password *password*.
+If you don't specify the bitcoin address it is going to leave the ouput of a coinbase transaction blank.
+#+end_src
+
+Currently it may not build/work on other Unix or Posix systems.
+
 *** All in all
 This may serve as a reference/ example implementation for:
 - *getblocktemplate* protocol
 - GPU accelerated mining 
 - OpenCL examples somewhat more interesting than basic vector addition.
+  

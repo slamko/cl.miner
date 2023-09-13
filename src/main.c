@@ -62,7 +62,7 @@ int parse_args(int argc, char **argv) {
             address = optarg;
             break;
         default:
-            error("Unknown arg %c: miner -u url -n username -p password -a btc_address\n", optopt);    
+            error("Unknown arg %c: miner -u <bitcoind_url> -n <username> -p <password> -a <btc_address>\n", optopt);    
             return 1;
             break;
         }
